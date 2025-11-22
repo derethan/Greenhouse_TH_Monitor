@@ -22,7 +22,7 @@
  * Global Objects
  *****************************************/
 SystemState state;
-SensorDataManager sensorData;
+SensorDataManager sensorData("greenhouse"); // Sensor data manager for greenhouse category
 NetworkConnections network; // Network management object
 DHTSensor dhtSensor(DHTPIN, DHTTYPE);
 LatestReadings latestReadings; // Store latest readings for web display
@@ -164,6 +164,7 @@ bool readDHTData(bool discardReading)
 
     sensorData.addSensorData({.sensorID = "Temperature-" + state.idCode,
                               .sensorType = {"Temperature"},
+                              .sensorName = "DHT",
                               .status = status,
                               .unit = {"°C"},
                               .timestamp = state.currentTime,
@@ -171,6 +172,7 @@ bool readDHTData(bool discardReading)
 
     sensorData.addSensorData({.sensorID = "Humidity-" + state.idCode,
                               .sensorType = {"Humidity"},
+                              .sensorName = "DHT",
                               .status = status,
                               .unit = {"%"},
                               .timestamp = state.currentTime,
@@ -264,13 +266,13 @@ void loop()
     }
 
     // Check device stabilization status
-    if (!state.deviceStabilized && currentMillis - state.deviceStartTime >= state.SENSOR_STABILIZATION_TIME)
-    {
-      state.deviceStabilized = true;
-      Serial.print("[SYSTEM] DHT Sensor stabilized at t=");
-      Serial.print(currentMillis);
-      Serial.println(", DHT Sensor readings will begin.");
-    }
+    // if (!state.deviceStabilized && currentMillis - state.deviceStartTime >= state.SENSOR_STABILIZATION_TIME)
+    // {
+    //   state.deviceStabilized = true;
+    //   Serial.print("[SYSTEM] DHT Sensor stabilized at t=");
+    //   Serial.print(currentMillis);
+    //   Serial.println(", DHT Sensor readings will begin.");
+    // }
 
     // Check if it's time to read Data from connected Sensors
     if (currentMillis - state.lastReadingTime >= state.sensorRead_interval)
@@ -280,13 +282,13 @@ void loop()
       state.lastReadingTime = currentMillis;
 
       // Read sensor, but discard data if not yet stabilized
-      bool discardReading = !state.deviceStabilized;
-      if (discardReading)
-      {
-        Serial.println("[SYSTEM] Device not stabilized yet, reading will be discarded");
-      }
+      // bool discardReading = !state.deviceStabilized;
+      // if (discardReading)
+      // {
+      //   Serial.println("[SYSTEM] Device not stabilized yet, reading will be discarded");
+      // }
 
-      bool readSuccess = readSensorData(discardReading);
+      bool readSuccess = readSensorData(false);
 
       if (DEBUG_MODE)
       {
@@ -302,8 +304,12 @@ void loop()
     {
       Serial.print("[HTTP] Time to publish sensor data at t=");
       Serial.println(currentMillis);
-      state.lastHTTPPublishTime = currentMillis; // Only publish if we have data and device is stabilized
-      if (state.deviceStabilized && sensorData.getSensorDataCount() > 0)
+      state.lastHTTPPublishTime = currentMillis;
+
+      // Only publish if we have data and device is stabilized
+      // if (state.deviceStabilized && sensorData.getSensorDataCount() > 0)
+      if (sensorData.getSensorDataCount() > 0)
+
       {
         Serial.print("[HTTP] Publishing ");
         Serial.print(sensorData.getSensorDataCount());
@@ -335,10 +341,10 @@ void loop()
     }
 
     // Handle web server requests when connected to WiFi
-    if (network.isConnected())
-    {
-      network.handleClientRequestsWithSensorData(latestReadings);
-    }
+    // if (network.isConnected())
+    // {
+    //   network.handleClientRequestsWithSensorData(latestReadings);
+    // }
 
     break;
 
@@ -350,13 +356,13 @@ void loop()
   case SystemMode::CONFIG_MODE:
 
     // Check device stabilization status
-    if (!state.deviceStabilized && currentMillis - state.deviceStartTime >= state.SENSOR_STABILIZATION_TIME)
-    {
-      state.deviceStabilized = true;
-      Serial.print("[SYSTEM] DHT Sensor stabilized at t=");
-      Serial.print(currentMillis);
-      Serial.println(", DHT Sensor readings will begin.");
-    }
+    // if (!state.deviceStabilized && currentMillis - state.deviceStartTime >= state.SENSOR_STABILIZATION_TIME)
+    // {
+    //   state.deviceStabilized = true;
+    //   Serial.print("[SYSTEM] DHT Sensor stabilized at t=");
+    //   Serial.print(currentMillis);
+    //   Serial.println(", DHT Sensor readings will begin.");
+    // }
 
     // Check if it's time to read Data from connected Sensors (even in config mode)
     if (currentMillis - state.lastReadingTime >= state.sensorRead_interval)
@@ -366,19 +372,19 @@ void loop()
       state.lastReadingTime = currentMillis;
 
       // Read sensor, but discard data if not yet stabilized
-      bool discardReading = !state.deviceStabilized;
-      if (discardReading)
-      {
-        Serial.println("[SYSTEM] Device not stabilized yet, reading will be discarded");
-      }
+      // bool discardReading = !state.deviceStabilized;
+      // if (discardReading)
+      // {
+      //   Serial.println("[SYSTEM] Device not stabilized yet, reading will be discarded");
+      // }
 
-      bool readSuccess = readSensorData(discardReading);
+      bool readSuccess = readSensorData(false);
       state.lastSensorRead = state.currentTime;
     }
 
     // Process DNS first
     // network.processDNSRequests();
-    network.handleClientRequestsWithSensorData(latestReadings);
+    // network.handleClientRequestsWithSensorData(latestReadings);
     break;
   }
 

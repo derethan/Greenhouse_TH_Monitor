@@ -1,7 +1,7 @@
 #include "dataProvider.h"
 
 // Constructor
-SensorDataManager::SensorDataManager()
+SensorDataManager::SensorDataManager(String cat) : category(cat)
 {
     // sensorDataList is automatically constructed
     // any additional initialization can go here
@@ -109,22 +109,24 @@ String SensorDataManager::convertSensorDataToJSON(const sensorData &data, String
 
     // Add device ID
     sensorDocument["ID"] = sanitizedID;
+    sensorDocument["category"] = category;
 
     // Create a JSON Array
     JsonArray sensorDataArray = sensorDocument["data"].to<JsonArray>();
 
     // Create a JSON Object
-    JsonObject sensorData = sensorDataArray.add<JsonObject>();
+    JsonObject sensorDataObj = sensorDataArray.add<JsonObject>();
 
     // Add the sensor data to the JSON Object
-    sensorData["ID"] = sanitizedSensorID;
-    sensorData["ST"] = data.status;
-    sensorData["TS"] = data.timestamp;
+    sensorDataObj["ID"] = sanitizedSensorID;
+    sensorDataObj["ST"] = data.status;
+    sensorDataObj["TS"] = data.timestamp;
+    sensorDataObj["SN"] = removeNullCharacters(data.sensorName);
 
     // Create JSON Arrays for sensor types, units, and values
-    JsonArray types = sensorData["TP"].to<JsonArray>();
-    JsonArray units = sensorData["UN"].to<JsonArray>();
-    JsonArray values = sensorData["VAL"].to<JsonArray>();
+    JsonArray types = sensorDataObj["TP"].to<JsonArray>();
+    JsonArray units = sensorDataObj["UN"].to<JsonArray>();
+    JsonArray values = sensorDataObj["VAL"].to<JsonArray>();
 
     // Populate arrays
     for (auto &type : data.sensorType)

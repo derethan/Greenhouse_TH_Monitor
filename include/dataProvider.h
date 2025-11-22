@@ -11,7 +11,8 @@ struct sensorData
 {
     String sensorID;                // Unique identifier for the sensor
     std::vector<String> sensorType; // Array of sensor types (e.g., Temp, NPK)
-    int status;                     // 0 = OK, 1 = Warning, 2 = Error
+    String sensorName;              // Type of sensor in Unit (DHT, DS18B20, etc.)
+    int status;                     // 200 = OK, 500 = ERROR, etc.
     std::vector<String> unit;       // Array of units of measurement
     unsigned long timestamp;        // Timestamp of the reading
     std::vector<float> values;      // Vector to store multiple values
@@ -21,6 +22,7 @@ struct sensorData
 class SensorDataManager
 {
 private:
+    String category;
     // Vector to store sensor data
     std::vector<sensorData> sensorDataList;
 
@@ -32,7 +34,7 @@ private:
 
 public:
     // Constructor
-    SensorDataManager();
+    SensorDataManager(String cat);
 
     // Destructor
     ~SensorDataManager();
@@ -62,9 +64,9 @@ public:
     void limitDataListSize(size_t maxSize = 100);
 
     // Singleton pattern (optional)
-    static SensorDataManager &getInstance()
+    static SensorDataManager &getInstance(String cat = "greenhouse")
     {
-        static SensorDataManager instance;
+        static SensorDataManager instance(cat);
         return instance;
     }
 };
