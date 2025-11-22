@@ -1,3 +1,16 @@
+#pragma once
+#include "Config.h"
+#include <Arduino.h>
+
+enum class SystemMode
+{
+  INITIALIZING,
+  NORMAL_OPERATION,
+  ERROR,
+  CONFIG_MODE,
+  SLEEPING
+};
+
 struct SystemState
 {
   SystemMode currentMode = SystemMode::INITIALIZING;
@@ -35,5 +48,6 @@ struct SystemState
   String lastErrorMessage;
 
   bool apAlwaysOn = false;
+};
 
-} state;
+extern SystemState state;

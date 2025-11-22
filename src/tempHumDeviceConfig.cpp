@@ -1,13 +1,13 @@
 #include "../include/tempHumDeviceConfig.h"
+#include "state.h"
 
-// Need to include main.cpp to access SystemState definition
 extern struct SystemState state;
 
 /*****************************************
  * Temperature/Humidity Device Specific Implementation
  *****************************************/
 
-void TempHumDeviceSettingsApplier::applySettings(const DeviceSettings& settings) 
+void TempHumDeviceSettingsApplier::applySettings(const DeviceSettings &settings)
 {
     // Apply loaded settings to the device-specific state
     state.SLEEP_DURATION = settings.sleepDuration;
@@ -19,7 +19,7 @@ void TempHumDeviceSettingsApplier::applySettings(const DeviceSettings& settings)
     state.httpPublishInterval = settings.httpPublishInterval;
 }
 
-void TempHumDeviceSettingsApplier::displaySettings(const DeviceSettings& settings) 
+void TempHumDeviceSettingsApplier::displaySettings(const DeviceSettings &settings)
 {
     Serial.println("[SYSTEM] Device settings applied:");
     Serial.print("  Sleep Duration: ");
@@ -37,7 +37,7 @@ void TempHumDeviceSettingsApplier::displaySettings(const DeviceSettings& setting
     Serial.println(settings.idCode);
     Serial.print("  HTTP Publishing: ");
     Serial.println(settings.httpPublishEnabled ? "Enabled" : "Disabled");
-    if (settings.httpPublishEnabled) 
+    if (settings.httpPublishEnabled)
     {
         Serial.print("  HTTP Publish Interval: ");
         Serial.print(settings.httpPublishInterval / 1000);
