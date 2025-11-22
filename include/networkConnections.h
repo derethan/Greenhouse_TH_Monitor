@@ -52,6 +52,13 @@ private:
     String apSSID;
     Preferences preferences;
     bool webServerStarted = false; // Track if web server is running
+    
+    // Network state tracking
+    String lastConnectedSSID = "";
+    String lastConnectedPassword = "";
+    bool hasStoredNetworkConfig = false;
+    unsigned long lastReconnectAttempt = 0;
+    const unsigned long RECONNECT_COOLDOWN = 30000; // 30 seconds between retry attempts
 
     void saveDeviceSettings(const DeviceSettings &settings);
     void scanNetworks();
@@ -76,6 +83,10 @@ public:
     // WiFi and network methods
     void setupWiFi(WiFiCredentials credentials, String idCode, bool apON); // Modified to accept credentials
     bool connectToNetwork(String ssid, String password);
+    bool reconnectToNetwork(int maxRetries = 3); // New reconnection method with retries
+    void disconnectWiFi(); // New method to properly disconnect WiFi before sleep
+    void saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2);
+    bool loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IPAddress &subnet, IPAddress &dns1, IPAddress &dns2);
     void startWebServer(); // New function to start web server in station mode
 
     // AP and Web Server methods

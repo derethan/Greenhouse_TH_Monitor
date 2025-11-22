@@ -115,6 +115,21 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     Serial.print("Attempting to connect to SSID: ");
     Serial.print(ssid);
 
+    // Try to load and apply saved network configuration first
+    IPAddress savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2;
+    if (loadNetworkConfig(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
+    {
+        Serial.println(" (using saved IP configuration)");
+        if (!WiFi.config(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
+        {
+            Serial.println("Failed to configure static IP, falling back to DHCP");
+        }
+    }
+    else
+    {
+        Serial.println(" (using DHCP)");
+    }
+
     WiFi.begin(ssid.c_str(), password.c_str());
 
     // Wait for connection or timeout
@@ -129,6 +144,9 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
             Serial.printf("\nStill trying to connect... (%.1f seconds elapsed)\n",
                           (millis() - startAttempt) / 1000.0);
         }
+
+        // Feed watchdog if available
+        esp_task_wdt_reset();
     }
     Serial.println();
 
@@ -136,8 +154,16 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     {
         Serial.print("Connected to WiFi network: ");
         Serial.println(ssid);
-        delay(1000); // Delay to allow connection to stabilize
+        printNetworkInfo();
 
+        // Store successful connection details
+        lastConnectedSSID = ssid;
+        lastConnectedPassword = password;
+
+        // Save network configuration for future use
+        saveNetworkConfig(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), WiFi.dnsIP(0), WiFi.dnsIP(1));
+
+        delay(1000); // Delay to allow connection to stabilize
         return true; // Successfully connected
     }
     else
@@ -308,6 +334,118 @@ unsigned long NetworkConnections::getRTCTime()
     // Serial.printf("RTC time read successfully: %lu (%s)", (unsigned long)tv.tv_sec, ctime(&tv.tv_sec));
 
     return (unsigned long)tv.tv_sec;
+}
+
+bool NetworkConnections::reconnectToNetwork(int maxRetries)
+{
+    // Check cooldown period
+    if (millis() - lastReconnectAttempt < RECONNECT_COOLDOWN)
+    {
+        return false;
+    }
+
+    lastReconnectAttempt = millis();
+
+    Serial.println("[RECONNECT] Starting WiFi reconnection process...");
+
+    // If we have stored credentials, try to reconnect
+    if (lastConnectedSSID.length() > 0 && lastConnectedPassword.length() > 0)
+    {
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            Serial.printf("[RECONNECT] Attempt %d/%d to reconnect to %s\n", attempt, maxRetries, lastConnectedSSID.c_str());
+
+            // Ensure WiFi is in station mode
+            WiFi.mode(WIFI_STA);
+            delay(100);
+
+            if (connectToNetwork(lastConnectedSSID, lastConnectedPassword))
+            {
+                Serial.println("[RECONNECT] Successfully reconnected!");
+                return true;
+            }
+
+            // Progressive delay between attempts
+            if (attempt < maxRetries)
+            {
+                unsigned long delayTime = attempt * 2000; // 2s, 4s, 6s...
+                Serial.printf("[RECONNECT] Waiting %lu ms before next attempt\n", delayTime);
+                delay(delayTime);
+            }
+        }
+
+        Serial.println("[RECONNECT] All reconnection attempts failed");
+    }
+    else
+    {
+        Serial.println("[RECONNECT] No stored credentials available");
+        // Try loading from NVS
+        WiFiCredentials credentials = loadWiFiCredentials();
+        if (credentials.valid)
+        {
+            return connectToNetwork(credentials.ssid, credentials.password);
+        }
+    }
+
+    return false;
+}
+
+void NetworkConnections::disconnectWiFi()
+{
+    Serial.println("[WIFI] Disconnecting WiFi for sleep...");
+    WiFi.disconnect(true); // true = turn off WiFi radio
+    WiFi.mode(WIFI_OFF);
+    delay(100);
+    Serial.println("[WIFI] WiFi disconnected and radio turned off");
+}
+
+void NetworkConnections::saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
+{
+    Serial.println("[NETWORK] Saving network configuration to NVS...");
+    preferences.begin("network", false); // Read-write mode
+
+    preferences.putUInt("ip", (uint32_t)ip);
+    preferences.putUInt("gateway", (uint32_t)gateway);
+    preferences.putUInt("subnet", (uint32_t)subnet);
+    preferences.putUInt("dns1", (uint32_t)dns1);
+    preferences.putUInt("dns2", (uint32_t)dns2);
+    preferences.putBool("hasConfig", true);
+
+    preferences.end();
+    hasStoredNetworkConfig = true;
+
+    Serial.printf("[NETWORK] Saved IP: %s, Gateway: %s\n", ip.toString().c_str(), gateway.toString().c_str());
+}
+
+bool NetworkConnections::loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IPAddress &subnet, IPAddress &dns1, IPAddress &dns2)
+{
+    preferences.begin("network", true); // Read-only mode
+
+    bool hasConfig = preferences.getBool("hasConfig", false);
+    if (!hasConfig)
+    {
+        preferences.end();
+        return false;
+    }
+
+    ip = IPAddress(preferences.getUInt("ip", 0));
+    gateway = IPAddress(preferences.getUInt("gateway", 0));
+    subnet = IPAddress(preferences.getUInt("subnet", 0));
+    dns1 = IPAddress(preferences.getUInt("dns1", 0));
+    dns2 = IPAddress(preferences.getUInt("dns2", 0));
+
+    preferences.end();
+
+    // Validate that we have reasonable IP addresses
+    if (ip[0] == 0 || gateway[0] == 0)
+    {
+        Serial.println("[NETWORK] Stored network config is invalid");
+        return false;
+    }
+
+    hasStoredNetworkConfig = true;
+    Serial.printf("[NETWORK] Loaded network config - IP: %s, Gateway: %s\n", ip.toString().c_str(), gateway.toString().c_str());
+    return true;
 }
 
 //------------------------------------------------------------------------------
@@ -637,7 +775,8 @@ void NetworkConnections::saveWiFiCredentials(String ssid, String password)
 void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
 {
     Serial.println("Saving device settings to NVS...");
-    preferences.begin("device", false); // Read-write mode    preferences.putULong64("sleepDuration", settings.sleepDuration);
+    preferences.begin("device", false); // Read-write mode    
+    preferences.putULong64("sleepDuration", settings.sleepDuration);
     preferences.putULong("sensorInterval", settings.sensorReadInterval);
     preferences.putULong("stabilizationTime", settings.sensorStabilizationTime);
     preferences.putString("deviceID", settings.deviceID);
@@ -657,17 +796,21 @@ DeviceSettings NetworkConnections::loadDeviceSettings()
     settings.valid = false; // Default to invalid
 
     Serial.println("Loading device settings from NVS storage...");
-    preferences.begin("device", true); // Read-only mode    settings.sleepDuration = preferences.getULong64("sleepDuration", 15ULL * 1000000ULL);
+    preferences.begin("device", true); // Read-only mode
+    settings.sleepDuration = preferences.getULong64("sleepDuration", 15ULL * 1000000ULL);
     settings.sensorReadInterval = preferences.getULong("sensorInterval", 30000);
     settings.sensorStabilizationTime = preferences.getULong("stabilizationTime", 60000);
-    settings.deviceID = preferences.getString("deviceID", "GG_TempHum_001");
-    settings.idCode = preferences.getString("idCode", "A9C5ECF3");
+    settings.deviceID = preferences.getString("deviceID", DEVICE_ID);
+    settings.idCode = preferences.getString("idCode", IDCODE);
     settings.ntpRetryEnabled = preferences.getBool("ntpRetryEnabled", true);
     settings.ntpRetryInterval = preferences.getULong("ntpRetryInterval", 3600000);
     settings.httpPublishEnabled = preferences.getBool("httpPublishEnabled", true);
     settings.httpPublishInterval = preferences.getULong("httpPublishInterval", 300000);
 
     preferences.end();
+
+    // Save settings to ensure defaults are stored if not present
+    saveDeviceSettings(settings);
 
     // Check if we have at least some custom settings (not all defaults)
     if (preferences.begin("device", true))

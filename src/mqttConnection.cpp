@@ -39,7 +39,7 @@ void MqttConnection::connectMQTT()
     int attempts = 0;
     unsigned long startTime = millis();
 
-    while (!mqttClient.connect(deviceID.c_str()))
+    while (!mqttClient.connect(deviceID.c_str(), false))
     {
         Serial.print(".");
         delay(100);
@@ -57,7 +57,8 @@ void MqttConnection::connectMQTT()
     Serial.println("You're connected to AWS IoT Core!");
 
     // Subscribe to incoming message topic
-    mqttClient.subscribe(AWS_IOT_CONFIGURATION_TOPIC + deviceID);
+    Serial.println("Subscribing to configuration topic: " + String(AWS_IOT_CONFIGURATION_TOPIC) + deviceID);
+    mqttClient.subscribe(String(AWS_IOT_CONFIGURATION_TOPIC) + deviceID);
 }
 
 // ===== Connection Management =====
@@ -68,6 +69,22 @@ void MqttConnection::checkConnection()
         connectMQTT();
     }
     mqttClient.loop(); // Keep the MQTT connection alive
+}
+
+void MqttConnection::disconnect()
+{
+    if (mqttClient.connected())
+    {
+        Serial.println("[MQTT] Disconnecting from MQTT broker...");
+        mqttClient.disconnect();
+        delay(100);
+        Serial.println("[MQTT] Disconnected from MQTT broker");
+    }
+}
+
+bool MqttConnection::isConnected()
+{
+    return mqttClient.connected();
 }
 
 // ===== Message Handling =====
@@ -142,12 +159,12 @@ void MqttConnection::handleConfigurationTopic(String &payload)
     // Check for collection_interval in settings
     if (!doc["settings"]["collection_interval"].isNull())
     {
-        // Extract the collection interval in seconds
+        // Extract the collection interval in ms
         unsigned long interval = doc["settings"]["collection_interval"].as<unsigned long>();
 
         // Update the collection interval
         state.sensorRead_interval = interval;
-        debug("Collection interval update requested: " + String(interval) + " seconds", true);
+        debug("Collection interval update requested: " + String(interval / 1000) + " seconds", true);
 
         // Send acknowledgment
         String ackMessage = "{\"device_id\":\"" + deviceID +

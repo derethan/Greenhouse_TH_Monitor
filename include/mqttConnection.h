@@ -27,6 +27,8 @@ public:
     void connectMQTT();
     bool publishMessage(String message);
     void checkConnection();
+    bool isConnected();
+    void disconnect(); // New method to properly disconnect MQTT before sleep
 
     // Debug logging method
     static void debug(const String &message, bool publishToAWS = true);

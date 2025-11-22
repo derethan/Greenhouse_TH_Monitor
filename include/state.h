@@ -8,7 +8,7 @@ enum class SystemMode
   NORMAL_OPERATION,
   ERROR,
   CONFIG_MODE,
-  SLEEPING
+  WAKE_UP
 };
 
 struct SystemState
@@ -23,7 +23,7 @@ struct SystemState
   // Add timing control for sensor readings - now configurable
   unsigned long deviceStartTime = 0;
   unsigned long lastReadingTime = 0;
-  unsigned long sensorRead_interval = 30000; // 30 seconds between readings (configurable)
+  unsigned long sensorRead_interval = 60000; // 60 seconds between readings (configurable)
 
   unsigned long SENSOR_STABILIZATION_TIME = 15000; // 15 seconds stabilization (configurable)
   bool deviceStabilized = false;
@@ -41,7 +41,7 @@ struct SystemState
 
   // HTTP Publishing settings (configurable)
   bool httpPublishEnabled = true;
-  unsigned long httpPublishInterval = 30000; // 30 seconds default
+  unsigned long httpPublishInterval = 60000; // 60 seconds default
 
   bool sensorError = false;
   uint32_t lastErrorTime = 0;

@@ -4,7 +4,7 @@
 #define DEBUG_MODE true
 
 // Device Information
-#define DEVICE_ID "GG-TH-"
+#define DEVICE_ID "GH_THM-"
 #define IDCODE "A9C5ECF3" // Unique device identifier
 
 // pin definitions

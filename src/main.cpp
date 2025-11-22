@@ -5,6 +5,7 @@
 
 // Include System Libraries
 #include "networkConnections.h"
+#include "mqttConnection.h"
 
 // Device Libraries
 #include "dhtSensor.h"
@@ -22,8 +23,9 @@
  * Global Objects
  *****************************************/
 SystemState state;
-SensorDataManager sensorData("greenhouse"); // Sensor data manager for greenhouse category
-NetworkConnections network; // Network management object
+SensorDataManager sensorDataManager("greenhouse"); // Sensor data manager for greenhouse category
+NetworkConnections network;                        // Network management object
+MqttConnection mqtt;                               // MQTT connection object
 DHTSensor dhtSensor(DHTPIN, DHTTYPE);
 LatestReadings latestReadings; // Store latest readings for web display
 
@@ -96,7 +98,18 @@ void setupNetwork()
     }
 
     // Start the web server when connected to WiFi
-    network.startWebServer();
+    // network.startWebServer();
+  }
+}
+
+void initializeMQTT()
+{
+  if (!network.isAPMode() && WiFi.status() == WL_CONNECTED)
+  {
+    // Combine device_id with idCode for the full device identifier
+    String fullDeviceID = state.deviceID + state.idCode;
+    mqtt.initializeMQTT(fullDeviceID.c_str());
+    mqtt.connectMQTT();
   }
 }
 
@@ -162,21 +175,21 @@ bool readDHTData(bool discardReading)
   {
     Serial.println("[SENSOR] Reading stored and ready for transmission");
 
-    sensorData.addSensorData({.sensorID = "Temperature-" + state.idCode,
-                              .sensorType = {"Temperature"},
-                              .sensorName = "DHT",
-                              .status = status,
-                              .unit = {"°C"},
-                              .timestamp = state.currentTime,
-                              .values = {temp}});
+    sensorDataManager.addSensorData({.sensorID = "DHT-" + state.idCode,
+                                     .sensorType = {"airTemperature"},
+                                     .sensorName = "DHT",
+                                     .status = status,
+                                     .unit = {"°C"},
+                                     .timestamp = state.currentTime,
+                                     .values = {temp}});
 
-    sensorData.addSensorData({.sensorID = "Humidity-" + state.idCode,
-                              .sensorType = {"Humidity"},
-                              .sensorName = "DHT",
-                              .status = status,
-                              .unit = {"%"},
-                              .timestamp = state.currentTime,
-                              .values = {hum}});
+    sensorDataManager.addSensorData({.sensorID = "DHT-" + state.idCode,
+                                     .sensorType = {"airHumidity"},
+                                     .sensorName = "DHT",
+                                     .status = status,
+                                     .unit = {"%"},
+                                     .timestamp = state.currentTime,
+                                     .values = {hum}});
   }
   else
   {
@@ -188,6 +201,113 @@ bool readDHTData(bool discardReading)
   Serial.println();
 
   return !isnan(temp) && !isnan(hum);
+}
+
+// Function to publish the Data
+bool publishDataWithMQTT()
+{
+  Serial.print("[MQTT] Publishing sensor data via MQTT...");
+  Serial.print(sensorDataManager.getSensorDataCount());
+  Serial.println(" sensor data items...");
+
+  // Combine device_id with idCode for the full device identifier
+  String fullDeviceID = state.deviceID + state.idCode;
+
+  const std::vector<sensorData> &dataList = sensorDataManager.getAllSensorData();
+  bool allPublished = true;
+
+  for (const auto &data : dataList)
+  {
+
+    // Print the sensor being published
+    Serial.print("Publishing sensor data for: ");
+    Serial.println(data.sensorID);
+
+    // Convert sensor data to JSON format
+    String jsonPayload = sensorDataManager.convertSensorDataToJSON(data, fullDeviceID);
+
+    // Publish to MQTT
+    if (mqtt.isConnected())
+    {
+      // Publish the JSON data to the MQTT Broker
+      if (!mqtt.publishMessage(jsonPayload))
+      {
+        Serial.println("Failed to publish to MQTT: " + data.sensorID);
+        allPublished = false;
+      }
+    }
+    else
+    {
+      Serial.println("MQTT not connected, skipping publish for: " + data.sensorID);
+      allPublished = false;
+    }
+
+    // Delay for 1 second between each publish
+    delay(1000);
+  }
+  return allPublished;
+}
+
+bool publishDataWithHTTP()
+{
+  Serial.print("[HTTP] Publishing ");
+  Serial.print(sensorDataManager.getSensorDataCount());
+  Serial.println(" sensor data items...");
+
+  // Combine device_id with idCode for the full device identifier
+  String fullDeviceID = state.deviceID + state.idCode;
+
+  // Publish sensor data via HTTP
+  bool publishSuccess = network.publishSensorData(sensorDataManager, fullDeviceID);
+
+  if (publishSuccess)
+  {
+    Serial.println("[HTTP] Data published successfully - clearing sensor data buffer");
+  }
+  else
+  {
+    Serial.println("[HTTP] Failed to publish data - keeping data for next attempt");
+  }
+
+  return publishSuccess;
+}
+
+// Sleep function with proper WiFi management
+void sleep(unsigned long currentMillis)
+{
+  // Calculate which interval is next (reading or publishing)
+  unsigned long timeToNextReading = state.sensorRead_interval - (currentMillis - state.lastReadingTime);
+  unsigned long timeToNextPublish = state.httpPublishInterval - (currentMillis - state.lastHTTPPublishTime);
+  unsigned long sleepDuration = min(timeToNextReading, timeToNextPublish); // Sleep until the next scheduled event
+
+  // Ensure minimum wake duration is respected
+  // if (sleepDuration < state.MIN_WAKE_DURATION)
+  // {
+  //   sleepDuration = state.MIN_WAKE_DURATION;
+  // }
+
+  Serial.print("[SYSTEM] Preparing to sleep for ");
+  Serial.print(sleepDuration);
+  Serial.println(" milliseconds");
+
+  // Properly disconnect WiFi and MQTT before sleep
+  if (network.isConnected())
+  {
+    Serial.println("[SYSTEM] Disconnecting MQTT and WiFi before sleep...");
+    mqtt.disconnect();
+    delay(100);
+    network.disconnectWiFi();
+    delay(200);
+  }
+
+  // Brief delay for serial to complete and to prevent busy-waiting
+  delay(100);
+
+  // Enter light sleep
+  esp_sleep_enable_timer_wakeup(sleepDuration * 1000); // Convert ms to us
+  esp_light_sleep_start();
+  state.currentMode = SystemMode::WAKE_UP;
+  Serial.println("[SYSTEM] Woke up from sleep");
 }
 
 void setup()
@@ -223,6 +343,10 @@ void setup()
   Serial.println("[SYSTEM] Initializing network connections...");
   setupNetwork();
 
+  // Initialize MQTT if connected to network
+  Serial.println("[SYSTEM] Initializing MQTT connection...");
+  initializeMQTT();
+
   Serial.print("[SYSTEM] Setup complete.");
 }
 
@@ -243,7 +367,7 @@ void loop()
       state.lastTimeSyncEpoch = state.currentTime;
 
       // Start web server when connected to WiFi
-      network.startWebServer();
+      // network.startWebServer();
     }
     else if (network.isAPMode())
     {
@@ -259,6 +383,7 @@ void loop()
     if (network.isConnected())
     {
       state.currentTime = network.getRTCTime();
+      mqtt.checkConnection();
     }
     else
     {
@@ -293,7 +418,7 @@ void loop()
       if (DEBUG_MODE)
       {
         // print all sensor data
-        sensorData.printAllSensorData();
+        sensorDataManager.printAllSensorData();
       }
       state.lastSensorRead = state.currentTime;
     }
@@ -302,37 +427,23 @@ void loop()
     if (state.httpPublishEnabled && network.isConnected() &&
         (currentMillis - state.lastHTTPPublishTime >= state.httpPublishInterval))
     {
-      Serial.print("[HTTP] Time to publish sensor data at t=");
+      Serial.print("[HTTP/MQTT] Time to publish sensor data at t=");
       Serial.println(currentMillis);
       state.lastHTTPPublishTime = currentMillis;
 
       // Only publish if we have data and device is stabilized
       // if (state.deviceStabilized && sensorData.getSensorDataCount() > 0)
-      if (sensorData.getSensorDataCount() > 0)
-
+      if (sensorDataManager.getSensorDataCount() > 0)
       {
-        Serial.print("[HTTP] Publishing ");
-        Serial.print(sensorData.getSensorDataCount());
-        Serial.println(" sensor data items...");
 
-        // Combine device_id with idCode for the full device identifier
-        String fullDeviceID = state.deviceID + state.idCode;
+        // First handle HTTP Publishing
+        // publishDataWithHTTP();
 
-        // Publish sensor data via HTTP
-        bool publishSuccess = network.publishSensorData(sensorData, fullDeviceID);
+        // handle Publishing via MQTT as well
+        publishDataWithMQTT();
 
-        if (publishSuccess)
-        {
-          Serial.println("[HTTP] Data published successfully - clearing sensor data buffer");
-          sensorData.resetSensorData(); // Clear data after successful publication
-        }
-        else
-        {
-          Serial.println("[HTTP] Failed to publish data - keeping data for next attempt");
-
-          // FOR TESTING: Always Reset sensor data after attempting to publish
-          sensorData.resetSensorData(); // Clear data after successful publication
-        }
+        // Clear sensor data after publishing
+        sensorDataManager.resetSensorData();
       }
       else
       {
@@ -345,6 +456,9 @@ void loop()
     // {
     //   network.handleClientRequestsWithSensorData(latestReadings);
     // }
+
+    // Sleep testing
+    sleep(currentMillis);
 
     break;
 
@@ -386,6 +500,39 @@ void loop()
     // network.processDNSRequests();
     // network.handleClientRequestsWithSensorData(latestReadings);
     break;
+  case SystemMode::WAKE_UP:
+
+    // We need to reconnect network after wake-up
+    Serial.println("[SYSTEM] Re-initializing network connections after wake-up...");
+    
+    // Try reconnection with retry logic first
+    bool reconnected = network.reconnectToNetwork(3);
+    
+    if (!reconnected)
+    {
+      Serial.println("[SYSTEM] Reconnection failed, trying full WiFi setup...");
+      WiFiCredentials credentials = network.loadWiFiCredentials();
+      network.setupWiFi(credentials, state.idCode, state.apAlwaysOn);
+    }
+    
+    // Reconnect MQTT if WiFi is connected
+    if (network.isConnected())
+    {
+      Serial.println("[SYSTEM] Reconnecting MQTT...");
+      mqtt.checkConnection();
+      state.currentMode = SystemMode::NORMAL_OPERATION;
+      
+      // Update time after reconnection
+      state.currentTime = network.getRTCTime();
+      Serial.println("[SYSTEM] WiFi reconnected successfully, resuming normal operation");
+    }
+    else
+    {
+      Serial.println("[SYSTEM] WiFi reconnection failed, entering configuration mode");
+      state.currentMode = SystemMode::CONFIG_MODE;
+    }
+    
+    break;
   }
 
   // Add a debug statement every 30 seconds to show the system is still running
@@ -416,6 +563,32 @@ void loop()
     Serial.println();
   }
 
-  // Brief delay for serial to complete and to prevent busy-waiting
+// Short delay to prevent busy-waiting
   delay(100);
 }
+
+// Bug 1
+// System time synchronized successfully via NTP
+// Connecting to AWS IoT broker: a2ga0ktmn5tic5-ats.iot.us-east-1.amazonaws.com
+// [572457][E][ssl_client.cpp:37] _handle_error(): [data_to_read():361]: (-76) UNKNOWN ERROR CODE (004C)
+// You're connected to AWS IoT Core!
+
+// Bug 2
+// [SYSTEM] Woke up from sleep
+// [SYSTEM] Re-initializing network connections after wake-up...
+// Loading Credentials from NVS storage...
+// Wi-Fi credentials loaded successfully from NVS.
+// SSID: BATECH_Camera
+// Configuring station mode only
+// Attempting to connect to SSID: BATECH_Camera........................................
+// WiFi connection failed.
+// Scanning for WiFi networks...
+// Number of networks found: 3
+// Networks found:
+// 1: BATECH_Camera (RSSI: -46 dBm)  [Secured]
+// 2: BATECH_Gateway (RSSI: -55 dBm)  [Secured]
+// 3: BELL799 (RSSI: -94 dBm)  [Secured]
+// Creating access point named: GG-TH-A9C5ECF3
+// Access Point started successfully
+// AP SSID: GG-TH-A9C5ECF3
+// AP IP Address: 192.168.4.1
