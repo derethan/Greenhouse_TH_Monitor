@@ -53,7 +53,6 @@ private:
     Preferences preferences;
     bool webServerStarted = false; // Track if web server is running
 
-    void saveWiFiCredentials(String ssid, String password);
     void saveDeviceSettings(const DeviceSettings &settings);
     void scanNetworks();
     void printNetworkInfo();
@@ -74,20 +73,28 @@ public:
     WiFiCredentials loadWiFiCredentials(); // New function
     DeviceSettings loadDeviceSettings();   // New function for loading device settings
 
+    // WiFi and network methods
     void setupWiFi(WiFiCredentials credentials, String idCode, bool apON); // Modified to accept credentials
     bool connectToNetwork(String ssid, String password);
     void startWebServer(); // New function to start web server in station mode
 
+    // AP and Web Server methods
     void setupAP(String idCode);
     void handleClientRequests();
     void handleClientRequestsWithSensorData(const LatestReadings &readings); // Updated method for sensor data
     void sendWiFiConfigPage(WiFiClient &client);
+
+    // Configuration processing methods
     void processWiFiConfig(WiFiClient &client, String request);
+    void saveWiFiCredentials(String ssid, String password);
+
+    // Helpers for mode and time
     bool isAPMode();
     static unsigned long getTime();
     static unsigned long getRTCTime(); // Add this new method declaration
     static bool retryNTPSync();        // New function for periodic NTP retry attempts
-                                       // HTTP Publishing functions
+
+    // HTTP Publishing functions
     bool publishSensorData(const SensorDataManager &sensorData, const String &deviceID);
     bool sendSensorDataHTTP(const sensorData &data, const String &deviceID);
     bool testServerConnection(const String &deviceID);
