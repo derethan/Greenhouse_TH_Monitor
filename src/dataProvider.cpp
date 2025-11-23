@@ -1,23 +1,41 @@
-#include "dataProvider.h"
+/**
+ * @file dataProvider.cpp
+ * @brief Sensor data management and JSON conversion implementation
+ * 
+ * Manages a collection of sensor data, validates data integrity, and provides
+ * JSON serialization for data transmission. Includes size limiting to prevent
+ * memory overflow on embedded systems.
+ */
 
-// Constructor
+#include "dataProvider.h"
+#include "base/sysLogs.h"
+
+/**
+ * @brief Construct a new Sensor Data Manager object
+ * @param cat Category name for this sensor data collection (e.g., "greenhouse")
+ */
 SensorDataManager::SensorDataManager(String cat) : category(cat)
 {
     // sensorDataList is automatically constructed
     // any additional initialization can go here
 }
 
-// Destructor
+/**
+ * @brief Destroy the Sensor Data Manager object and clean up resources
+ */
 SensorDataManager::~SensorDataManager()
 {
     // Cleanup code if needed
     resetSensorData();
 }
 
-/*****************************************
- * SENSOR DATA MANAGEMENT FUNCTIONS - CRUD
- * ***************************************/
-
+/**
+ * @brief Add a sensor data entry to the collection
+ * @param data The sensor data structure to add
+ * 
+ * Validates the data before adding to ensure data integrity.
+ * Automatically limits the collection size to prevent memory issues.
+ */
 void SensorDataManager::addSensorData(const sensorData &data)
 {
     // Validate data before adding
@@ -29,23 +47,34 @@ void SensorDataManager::addSensorData(const sensorData &data)
     }
     else
     {
-        Serial.println("Warning: Invalid sensor data not added");
+        SysLogs::logWarning("Invalid sensor data not added");
     }
 }
 
-// Get all Sensor Data (improved to return const reference)
+/**
+ * @brief Get all sensor data in the collection
+ * @return const reference to the vector of sensor data
+ */
 const std::vector<sensorData> &SensorDataManager::getAllSensorData() const
 {
     return sensorDataList;
 }
 
-// Get count of sensor data items
+/**
+ * @brief Get the count of sensor data items in the collection
+ * @return Number of sensor data entries
+ */
 size_t SensorDataManager::getSensorDataCount() const
 {
     return sensorDataList.size();
 }
 
-// Find sensor by ID
+/**
+ * @brief Find a sensor data entry by its ID
+ * @param sensorId The sensor ID to search for
+ * @param result Output parameter to store the found sensor data
+ * @return true if sensor found, false otherwise
+ */
 bool SensorDataManager::findSensorById(const String &sensorId, sensorData &result) const
 {
     for (const auto &data : sensorDataList)
@@ -59,7 +88,12 @@ bool SensorDataManager::findSensorById(const String &sensorId, sensorData &resul
     return false;
 }
 
-// Limit data list size to prevent memory issues
+/**
+ * @brief Limit the data list size to prevent memory overflow
+ * @param maxSize Maximum number of sensor data entries to keep (default: 100)
+ * 
+ * Removes oldest entries (FIFO) when the limit is exceeded.
+ */
 void SensorDataManager::limitDataListSize(size_t maxSize)
 {
     if (sensorDataList.size() > maxSize)
@@ -69,7 +103,16 @@ void SensorDataManager::limitDataListSize(size_t maxSize)
     }
 }
 
-// Validate sensor data structure
+/**
+ * @brief Validate sensor data structure for integrity
+ * @param data The sensor data structure to validate
+ * @return true if data is valid, false otherwise
+ * 
+ * Checks:
+ * - Sensor ID is not empty
+ * - Sensor type, unit, and values vectors have matching sizes
+ * - At least one sensor type is present
+ */
 bool SensorDataManager::validateSensorData(const sensorData &data)
 {
     // Check if sensorID is not empty
@@ -94,10 +137,15 @@ bool SensorDataManager::validateSensorData(const sensorData &data)
     return true;
 }
 
-/*****************************************
- * SENSOR DATA JSON Functions
- * ***************************************/
-
+/**
+ * @brief Convert sensor data to JSON format
+ * @param data The sensor data to convert
+ * @param deviceID The device identifier to include in the JSON
+ * @return JSON string representation of the sensor data
+ * 
+ * Creates a JSON document with device ID, category, and sensor data arrays
+ * including sensor types, units, and values.
+ */
 String SensorDataManager::convertSensorDataToJSON(const sensorData &data, String deviceID)
 {
     // Create a JSON Document
@@ -150,7 +198,13 @@ String SensorDataManager::convertSensorDataToJSON(const sensorData &data, String
     return jsonString;
 }
 
-// Function to remove null characters from a string
+/**
+ * @brief Remove null characters from a string
+ * @param input The input string to sanitize
+ * @return Sanitized string without null characters
+ * 
+ * Prevents null character injection issues in JSON strings.
+ */
 String SensorDataManager::removeNullCharacters(const String &input)
 {
     String output;
@@ -164,50 +218,55 @@ String SensorDataManager::removeNullCharacters(const String &input)
     return output;
 }
 
-/*****************************************
- * SENSOR DATA Reseting Functions
- * ***************************************/
-
+/**
+ * @brief Reset/clear all sensor data from the collection
+ * 
+ * Removes all sensor data entries, typically called after successful
+ * data transmission to free memory.
+ */
 void SensorDataManager::resetSensorData()
 {
     sensorDataList.clear();
 }
 
-/*****************************************
- * DEBUGGING FUNCTIONS
- * ***************************************/
-
+/**
+ * @brief Print all sensor data to the debug log
+ * 
+ * Displays detailed information about each sensor data entry including
+ * sensor ID, types, status, units, timestamps, and values.
+ * Only outputs when DEBUG_MODE is enabled.
+ */
 void SensorDataManager::printAllSensorData()
 {
     for (const auto &data : sensorDataList)
     {
-        Serial.print("Sensor ID: ");
-        Serial.println(data.sensorID);
-        Serial.print("Sensor Type: ");
+        SysLogs::print("Sensor ID: ");
+        SysLogs::println(data.sensorID);
+        SysLogs::print("Sensor Type: ");
         for (const auto &type : data.sensorType)
         {
-            Serial.print(type);
-            Serial.print(" ");
+            SysLogs::print(type);
+            SysLogs::print(" ");
         }
-        Serial.println();
-        Serial.print("Status: ");
-        Serial.println(data.status);
-        Serial.print("Unit: ");
+        SysLogs::println();
+        SysLogs::print("Status: ");
+        SysLogs::println(String(data.status));
+        SysLogs::print("Unit: ");
         for (const auto &unit : data.unit)
         {
-            Serial.print(unit);
-            Serial.print(" ");
+            SysLogs::print(unit);
+            SysLogs::print(" ");
         }
-        Serial.println();
-        Serial.print("Timestamp: ");
-        Serial.println(data.timestamp);
-        Serial.print("Values: ");
+        SysLogs::println();
+        SysLogs::print("Timestamp: ");
+        SysLogs::println(String(data.timestamp));
+        SysLogs::print("Values: ");
         for (const auto &value : data.values)
         {
-            Serial.print(value);
-            Serial.print(" ");
+            SysLogs::print(String(value));
+            SysLogs::print(" ");
         }
-        Serial.println();
-        Serial.println("----------------------------");
+        SysLogs::println();
+        SysLogs::println("----------------------------");
     }
 }
