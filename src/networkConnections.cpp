@@ -214,7 +214,7 @@ void NetworkConnections::startWebServer()
 
     SysLogs::logInfo("NETWORK", "[WEB] Web server started successfully");
     SysLogs::print("[WEB] Access the device dashboard at: http://");
-    SysLogs::println(WiFi.localIP());
+    SysLogs::println(WiFi.localIP().toString());
     SysLogs::logInfo("NETWORK", "[WEB] Available endpoints:");
     SysLogs::logInfo("NETWORK", "[WEB]   / or /index    - Sensor data dashboard");
     SysLogs::logInfo("NETWORK", "[WEB]   /data          - JSON API endpoint");
@@ -509,7 +509,7 @@ void NetworkConnections::setupAP(String idCode)
     SysLogs::print("AP SSID: ");
     SysLogs::println(apSSID);
     SysLogs::print("AP IP Address: ");
-    SysLogs::println(WiFi.softAPIP());
+    SysLogs::println(WiFi.softAPIP().toString());
 }
 
 void NetworkConnections::scanNetworks()
@@ -963,7 +963,7 @@ void NetworkConnections::printNetworkInfo()
 
     IPAddress ip = WiFi.localIP();
     SysLogs::print("IP Address: ");
-    SysLogs::println(ip);
+    SysLogs::println(ip.toString());
 
     SysLogs::print("Signal Strength (RSSI): ");
     SysLogs::print(WiFi.RSSI());
@@ -1482,7 +1482,7 @@ void NetworkConnections::processAdvancedConfig(WiFiClient &client, String reques
     SysLogs::println(request);
 
     // Extract the POST body
-    int bodyIndex = request.indexOf("\r\n\r");
+    int bodyIndex = request.indexOf("\r\n\r\n");
     if (bodyIndex == -1)
     {
         SysLogs::logInfo("NETWORK", "Error: Could not locate POST body.");
