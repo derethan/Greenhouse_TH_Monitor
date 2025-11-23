@@ -246,7 +246,7 @@ unsigned long NetworkConnections::getTime()
         for (int serverIndex = 0; serverIndex < numServers; serverIndex++)
         {
             const char *currentServer = ntpServers[serverIndex];
-            SysLogs::logInfo("NETWORK", "Trying NTP server: " + String(currentServer) + "\n");
+            SysLogs::logInfo("NETWORK", "Trying NTP server: " + String(currentServer) + "");
 
             // Configure NTP time synchronization with UTC (no timezone offset)
             configTime(0, 0, currentServer);
@@ -390,7 +390,7 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
             if (attempt < maxRetries)
             {
                 unsigned long delayTime = attempt * 2000; // 2s, 4s, 6s...
-            SysLogs::logInfo("NETWORK", "[RECONNECT] Waiting " + String(delayTime) + " ms before next attempt\n");
+            SysLogs::logInfo("NETWORK", "[RECONNECT] Waiting " + String(delayTime) + " ms before next attempt");
                 delay(delayTime);
             }
         }
@@ -659,7 +659,7 @@ void NetworkConnections::processWiFiConfig(WiFiClient &client, String request)
     SysLogs::println(request); // Log the full request
 
     // **Step 1: Extract the POST body correctly**
-    int bodyIndex = request.indexOf("\r\n\r\n"); // Find where headers end
+    int bodyIndex = request.indexOf("\r\n\r"); // Find where headers end
     if (bodyIndex == -1)
     {
         SysLogs::logInfo("NETWORK", "Error: Could not locate POST body.");
@@ -1482,7 +1482,7 @@ void NetworkConnections::processAdvancedConfig(WiFiClient &client, String reques
     SysLogs::println(request);
 
     // Extract the POST body
-    int bodyIndex = request.indexOf("\r\n\r\n");
+    int bodyIndex = request.indexOf("\r\n\r");
     if (bodyIndex == -1)
     {
         SysLogs::logInfo("NETWORK", "Error: Could not locate POST body.");
@@ -1707,7 +1707,7 @@ bool NetworkConnections::testServerConnection(const String &device_id)
 
     if (httpResponseCode > 0)
     {
-            SysLogs::logInfo("NETWORK", "[HTTP] Server ping successful: " + String(httpResponseCode) + "\n");
+            SysLogs::logInfo("NETWORK", "[HTTP] Server ping successful: " + String(httpResponseCode) + "");
         String response = http.getString();
         SysLogs::logDebug("HTTP", "Server response: " + response);
         http.end();
@@ -1715,7 +1715,7 @@ bool NetworkConnections::testServerConnection(const String &device_id)
     }
     else
     {
-            SysLogs::logInfo("NETWORK", "[HTTP] Server ping failed with error: " + String(httpResponseCode) + "\n");
+            SysLogs::logInfo("NETWORK", "[HTTP] Server ping failed with error: " + String(httpResponseCode) + "");
         http.end();
         return false;
     }
@@ -1769,7 +1769,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
     if (httpResponseCode > 0)
     {
         String response = http.getString();
-            SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode) + "\n");
+            SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode) + "");
         SysLogs::logDebug("HTTP", "Response: " + response);
 
         http.end();
@@ -1777,7 +1777,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
     }
     else
     {
-            SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode) + "\n");
+            SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode) + "");
         http.end();
         return false;
     }
