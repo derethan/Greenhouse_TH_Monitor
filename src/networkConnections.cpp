@@ -659,7 +659,7 @@ void NetworkConnections::processWiFiConfig(WiFiClient &client, String request)
     SysLogs::println(request); // Log the full request
 
     // **Step 1: Extract the POST body correctly**
-    int bodyIndex = request.indexOf("\r\n\r"); // Find where headers end
+    int bodyIndex = request.indexOf("\r\n\r\n"); // Find where headers end
     if (bodyIndex == -1)
     {
         SysLogs::logInfo("NETWORK", "Error: Could not locate POST body.");
