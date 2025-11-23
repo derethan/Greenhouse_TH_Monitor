@@ -72,6 +72,15 @@ private:
     void sendSensorDataJSON(WiFiClient &client, const LatestReadings &readings);
     void sendAdvancedConfigPage(WiFiClient &client, const DeviceSettings &settings);
     void processAdvancedConfig(WiFiClient &client, String request);
+
+    void checkNVSKey(String keyName);
+    
+    // Helper functions for NVS key checking with different data types
+    uint64_t checkNVSKeyULong64(const char* keyName, uint64_t defaultValue, const char* settingName);
+    unsigned long checkNVSKeyULong(const char* keyName, unsigned long defaultValue, const char* settingName);
+    String checkNVSKeyString(const char* keyName, const String& defaultValue, const char* settingName);
+    bool checkNVSKeyBool(const char* keyName, bool defaultValue, const char* settingName);
+    
     String formatTimestamp(unsigned long timestamp);
     String getStatusText(int status);
     String getStatusColor(int status);

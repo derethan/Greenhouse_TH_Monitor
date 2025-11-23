@@ -775,7 +775,7 @@ void NetworkConnections::saveWiFiCredentials(String ssid, String password)
 void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
 {
     Serial.println("Saving device settings to NVS...");
-    preferences.begin("device", false); // Read-write mode    
+    preferences.begin("device", false); // Read-write mode
     preferences.putULong64("sleepDur", settings.sleepDuration);
     preferences.putULong("sensorInt", settings.sensorReadInterval);
     preferences.putULong("stabilTime", settings.sensorStabilizationTime);
@@ -790,59 +790,100 @@ void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
     Serial.println("Device settings successfully saved to NVS.");
 }
 
+// Helper functions for NVS key checking with different data types
+uint64_t NetworkConnections::checkNVSKeyULong64(const char* keyName, uint64_t defaultValue, const char* settingName)
+{
+    if (!preferences.isKey(keyName))
+    {
+        preferences.putULong64(keyName, defaultValue);
+        Serial.print("Created default ");
+        Serial.print(settingName);
+        Serial.println(" setting");
+        return defaultValue;
+    }
+    return preferences.getULong64(keyName, defaultValue);
+}
+
+unsigned long NetworkConnections::checkNVSKeyULong(const char* keyName, unsigned long defaultValue, const char* settingName)
+{
+    if (!preferences.isKey(keyName))
+    {
+        preferences.putULong(keyName, defaultValue);
+        Serial.print("Created default ");
+        Serial.print(settingName);
+        Serial.println(" setting");
+        return defaultValue;
+    }
+    return preferences.getULong(keyName, defaultValue);
+}
+
+String NetworkConnections::checkNVSKeyString(const char* keyName, const String& defaultValue, const char* settingName)
+{
+    if (!preferences.isKey(keyName))
+    {
+        preferences.putString(keyName, defaultValue);
+        Serial.print("Created default ");
+        Serial.print(settingName);
+        Serial.println(" setting");
+        return defaultValue;
+    }
+    return preferences.getString(keyName, defaultValue);
+}
+
+bool NetworkConnections::checkNVSKeyBool(const char* keyName, bool defaultValue, const char* settingName)
+{
+    if (!preferences.isKey(keyName))
+    {
+        preferences.putBool(keyName, defaultValue);
+        Serial.print("Created default ");
+        Serial.print(settingName);
+        Serial.println(" setting");
+        return defaultValue;
+    }
+    return preferences.getBool(keyName, defaultValue);
+}
+
 DeviceSettings NetworkConnections::loadDeviceSettings()
 {
     DeviceSettings settings;
-    settings.valid = false; // Default to invalid
-
     Serial.println("Loading device settings from NVS storage...");
-    preferences.begin("device", true); // Read-only mode
-    settings.sleepDuration = preferences.getULong64("sleepDur", 15ULL * 1000000ULL);
-    settings.sensorReadInterval = preferences.getULong("sensorInt", 30000);
-    settings.sensorStabilizationTime = preferences.getULong("stabilTime", 15000);
-    settings.deviceID = preferences.getString("deviceID", DEVICE_ID);
-    settings.idCode = preferences.getString("idCode", IDCODE);
-    settings.ntpRetryEnabled = preferences.getBool("ntpRetry", true);
-    settings.ntpRetryInterval = preferences.getULong("ntpRetryInt", 3600000);
-    settings.httpPublishEnabled = preferences.getBool("httpPubEn", true);
-    settings.httpPublishInterval = preferences.getULong("httpPubInt", 30000);
+    preferences.begin("device", false); // Read-write mode to allow saving defaults
+
+    // Load each setting using helper functions - they handle defaults automatically
+    settings.sleepDuration = checkNVSKeyULong64("sleepDur", 15ULL * 1000000ULL, "sleepDur");
+    settings.sensorReadInterval = checkNVSKeyULong("sensorInt", 60000, "sensorInt");
+    settings.sensorStabilizationTime = checkNVSKeyULong("stabilTime", 15000, "stabilTime");
+    settings.deviceID = checkNVSKeyString("deviceID", DEVICE_ID, "deviceID");
+    settings.idCode = checkNVSKeyString("idCode", IDCODE, "idCode");
+    settings.ntpRetryEnabled = checkNVSKeyBool("ntpRetry", true, "ntpRetry");
+    settings.ntpRetryInterval = checkNVSKeyULong("ntpRetryInt", 3600000, "ntpRetryInt");
+    settings.httpPublishEnabled = checkNVSKeyBool("httpPubEn", true, "httpPubEn");
+    settings.httpPublishInterval = checkNVSKeyULong("httpPubInt", 60000, "httpPubInt");
 
     preferences.end();
 
-    // Save settings to ensure defaults are stored if not present
-    saveDeviceSettings(settings);
+    // Settings are always valid since helper functions ensure they exist
+    settings.valid = true;
+    Serial.println("Device settings loaded successfully from NVS.");
 
-    // Check if we have at least some custom settings (not all defaults)
-    if (preferences.begin("device", true))
-    {
-        bool hasSettings = preferences.isKey("sleepDur") ||
-                           preferences.isKey("sensorInt") ||
-                           preferences.isKey("deviceID");
-        preferences.end();
-
-        if (hasSettings)
-        {
-            settings.valid = true;
-            Serial.println("Device settings loaded successfully from NVS.");
-            Serial.print("Sleep Duration: ");
-            Serial.print(settings.sleepDuration / 1000000ULL);
-            Serial.println(" seconds");
-            Serial.print("Sensor Read Interval: ");
-            Serial.print(settings.sensorReadInterval / 1000);
-            Serial.println(" seconds");
-            Serial.print("Stabilization Time: ");
-            Serial.print(settings.sensorStabilizationTime / 1000);
-            Serial.println(" seconds");
-            Serial.print("Device ID: ");
-            Serial.println(settings.deviceID);
-            Serial.print("ID Code: ");
-            Serial.println(settings.idCode);
-        }
-        else
-        {
-            Serial.println("No custom device settings found in NVS. Using defaults.");
-        }
-    }
+    // Display loaded settings
+    Serial.print("Sleep Duration: ");
+    Serial.print(settings.sleepDuration / 1000000ULL);
+    Serial.println(" seconds");
+    Serial.print("Sensor Read Interval: ");
+    Serial.print(settings.sensorReadInterval / 1000);
+    Serial.println(" seconds");
+    Serial.print("Stabilization Time: ");
+    Serial.print(settings.sensorStabilizationTime / 1000);
+    Serial.println(" seconds");
+    Serial.print("Device ID: ");
+    Serial.println(settings.deviceID);
+    Serial.print("ID Code: ");
+    Serial.println(settings.idCode);
+    Serial.print("NTP Retry Enabled: ");
+    Serial.println(settings.ntpRetryEnabled ? "Yes" : "No");
+    Serial.print("HTTP Publish Enabled: ");
+    Serial.println(settings.httpPublishEnabled ? "Yes" : "No");
 
     return settings;
 }

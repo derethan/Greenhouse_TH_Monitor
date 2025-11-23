@@ -8,7 +8,8 @@ enum class SystemMode
   NORMAL_OPERATION,
   ERROR,
   CONFIG_MODE,
-  WAKE_UP
+  WAKE_UP,
+  SERIAL_MODE,
 };
 
 struct SystemState

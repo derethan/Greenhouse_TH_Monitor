@@ -17,6 +17,8 @@
 // Base configuration system
 #include "state.h"
 #include "base/deviceConfig.h"
+#include "base/sysLogs.h"
+
 #include "tempHumDeviceConfig.h"
 
 /*****************************************
@@ -34,9 +36,13 @@ LatestReadings latestReadings; // Store latest readings for web display
  *****************************************/
 void loadDeviceSettings();
 void setupNetwork();
+void initializeMQTT();
+
 bool readSensorData(bool discardReading = false);
 bool readDHTData(bool discardReading = false);
-void logError(const char *message);
+
+bool publishDataWithMQTT();
+bool publishDataWithHTTP();
 
 /*****************************************
  * Configuration Functions
@@ -53,21 +59,11 @@ void loadDeviceSettings()
 /*****************************************
  * Utility Functions
  *****************************************/
-void logError(const char *message)
-{
-  state.lastErrorMessage = message;
-  state.lastErrorTime = state.currentTime;
-  if (DEBUG_MODE)
-  {
-    Serial.print("ERROR: ");
-    Serial.println(message);
-  }
-}
 
 /*****************************************
  * System Functions
  *****************************************/
-
+// Setup Network Connections
 void setupNetwork()
 {
   WiFiCredentials credentials = network.loadWiFiCredentials();
@@ -102,6 +98,7 @@ void setupNetwork()
   }
 }
 
+// Initialize MQTT Connection
 void initializeMQTT()
 {
   if (!network.isAPMode() && WiFi.status() == WL_CONNECTED)
@@ -113,11 +110,12 @@ void initializeMQTT()
   }
 }
 
+// Function to read sensor data (Acts as a wrapper for specific sensors)
 bool readSensorData(bool discardReading)
 {
   if (!readDHTData(discardReading))
   {
-    logError("Sensor Error: Failed to read DHT data");
+    SysLogs::logError("Failed to read DHT data");
     state.sensorError = true;
     return false;
   }
@@ -128,6 +126,7 @@ bool readSensorData(bool discardReading)
   }
 }
 
+// Function to read data from the DHT sensor
 bool readDHTData(bool discardReading)
 {
   Serial.println();
@@ -203,7 +202,7 @@ bool readDHTData(bool discardReading)
   return !isnan(temp) && !isnan(hum);
 }
 
-// Function to publish the Data
+// Function to publish the Data via MQTT
 bool publishDataWithMQTT()
 {
   Serial.print("[MQTT] Publishing sensor data via MQTT...");
@@ -248,11 +247,11 @@ bool publishDataWithMQTT()
   return allPublished;
 }
 
+// Function to publish the Data via HTTP
 bool publishDataWithHTTP()
 {
-  Serial.print("[HTTP] Publishing ");
-  Serial.print(sensorDataManager.getSensorDataCount());
-  Serial.println(" sensor data items...");
+  SysLogs::printSectionHeader("HTTP");
+  SysLogs::logInfo("HTTP", "Publishing " + String(sensorDataManager.getSensorDataCount()) + " sensor data items...");
 
   // Combine device_id with idCode for the full device identifier
   String fullDeviceID = state.deviceID + state.idCode;
@@ -286,14 +285,12 @@ void sleep(unsigned long currentMillis)
   //   sleepDuration = state.MIN_WAKE_DURATION;
   // }
 
-  Serial.print("[SYSTEM] Preparing to sleep for ");
-  Serial.print(sleepDuration);
-  Serial.println(" milliseconds");
+  SysLogs::logInfo("SYSTEM", "Entering sleep for " + String(sleepDuration) + " ms");
 
   // Properly disconnect WiFi and MQTT before sleep
   if (network.isConnected())
   {
-    Serial.println("[SYSTEM] Disconnecting MQTT and WiFi before sleep...");
+    SysLogs::logInfo("SYSTEM", "Disconnecting MQTT and WiFi before sleep...");
     mqtt.disconnect();
     delay(100);
     network.disconnectWiFi();
@@ -307,32 +304,32 @@ void sleep(unsigned long currentMillis)
   esp_sleep_enable_timer_wakeup(sleepDuration * 1000); // Convert ms to us
   esp_light_sleep_start();
   state.currentMode = SystemMode::WAKE_UP;
-  Serial.println("[SYSTEM] Woke up from sleep");
+  SysLogs::logInfo("SYSTEM", "Woke up from sleep");
 }
 
+// Main System Setup
 void setup()
 {
   Serial.begin(115200);
   delay(5000); // Allow time for serial to initialize
-  Serial.println("\n\n[SYSTEM] Garden Guardian - Temperature & Humidity Monitor");
+  SysLogs::logInfo("SYSTEM", "Starting Garden Guardian - Temperature & Humidity Monitor");
 
   // Record start time for stabilization tracking
   state.deviceStartTime = millis();
-  Serial.print("[SYSTEM] Device start time: t=");
-  Serial.println(state.deviceStartTime);
+  SysLogs::logInfo("SYSTEM", "Device start time: t=" + String(state.deviceStartTime));
 
-  Serial.println("[SENSOR] Initializing sensors...");
+  SysLogs::logInfo("SENSOR", "Initializing sensors...");
 
   // Initialize DHT sensor
   if (!dhtSensor.begin())
   {
-    Serial.println("[SENSOR] ERROR: Failed to connect to DHT sensor!");
     state.sensorError = true;
     state.lastErrorTime = millis();
+    SysLogs::logError("Failed to connect to DHT sensor!");
   }
   else
   {
-    Serial.println("[SENSOR] DHT sensor initialized successfully");
+    SysLogs::logInfo("SENSOR", "DHT sensor initialized successfully.");
   }
   delay(1000);
 
@@ -340,24 +337,25 @@ void setup()
   loadDeviceSettings();
 
   // Initialize Network
-  Serial.println("[SYSTEM] Initializing network connections...");
+  SysLogs::logInfo("SYSTEM", "Initializing network connections...");
   setupNetwork();
 
   // Initialize MQTT if connected to network
-  Serial.println("[SYSTEM] Initializing MQTT connection...");
+  SysLogs::logInfo("SYSTEM", "Initializing MQTT connection...");
   initializeMQTT();
 
-  Serial.print("[SYSTEM] Setup complete.");
+  SysLogs::logInfo("SYSTEM", "Setup complete.");
 }
 
+// Main System Loop
 void loop()
 {
   unsigned long currentMillis = millis();
 
-  // Update system mode based on conditions
   switch (state.currentMode)
   {
   case SystemMode::INITIALIZING:
+  {
     if (network.isConnected())
     {
       state.currentMode = SystemMode::NORMAL_OPERATION;
@@ -372,13 +370,14 @@ void loop()
     else if (network.isAPMode())
     {
       state.currentMode = SystemMode::CONFIG_MODE;
-      Serial.println("Entering Configuration Mode, Awaiting Network Configuration...");
+      SysLogs::logInfo("SYSTEM", "Entering Configuration Mode, Awaiting Network Configuration...");
       state.currentTime = millis();
     }
     break;
+  }
 
   case SystemMode::NORMAL_OPERATION:
-
+  {
     // Update current time
     if (network.isConnected())
     {
@@ -402,8 +401,7 @@ void loop()
     // Check if it's time to read Data from connected Sensors
     if (currentMillis - state.lastReadingTime >= state.sensorRead_interval)
     {
-      Serial.print("[SYSTEM] Time to take a sensor reading at t=");
-      Serial.println(currentMillis);
+      SysLogs::logInfo("SYSTEM", "Time to take a sensor reading at t=" + String(currentMillis));
       state.lastReadingTime = currentMillis;
 
       // Read sensor, but discard data if not yet stabilized
@@ -413,41 +411,21 @@ void loop()
       //   Serial.println("[SYSTEM] Device not stabilized yet, reading will be discarded");
       // }
 
-      bool readSuccess = readSensorData(false);
-
-      if (DEBUG_MODE)
-      {
-        // print all sensor data
-        sensorDataManager.printAllSensorData();
-      }
+      bool readSuccess = readSensorData(false); // use DiscardReading as param for stabilization
+      sensorDataManager.printAllSensorData();
       state.lastSensorRead = state.currentTime;
+
+      if (!readSuccess)
+      {
+        SysLogs::logError("Sensor read failed during normal operation at t=" + String(currentMillis));
+      }
     }
 
-    // Debugging, log time to publish details
-    if (DEBUG_MODE)
-    {
-      Serial.print("[DEBUG] Time since last HTTP publish: ");
-      Serial.print(currentMillis - state.lastHTTPPublishTime);
-      Serial.print(" ms, Interval: ");
-      Serial.print(state.httpPublishInterval);
-      Serial.println(" ms");
-
-      // add time remaining and is time to publish boolen
-      unsigned long timeSinceLastPublish = currentMillis - state.lastHTTPPublishTime;
-      unsigned long timeRemaining = (timeSinceLastPublish >= state.httpPublishInterval) ? 0 : (state.httpPublishInterval - timeSinceLastPublish);
-      Serial.print("[DEBUG] Time remaining until next HTTP publish: ");
-      Serial.print(timeRemaining);
-      Serial.println(" ms");
-      Serial.print("[DEBUG] Is it time to publish? ");
-      Serial.println((timeSinceLastPublish >= state.httpPublishInterval) ? "Yes" : "No");
-
-    }
     // Check if it's time to publish data via HTTP (non-blocking timer)
     if (state.httpPublishEnabled && network.isConnected() &&
         (currentMillis - state.lastHTTPPublishTime >= state.httpPublishInterval))
     {
-      Serial.print("[HTTP/MQTT] Time to publish sensor data at t=");
-      Serial.println(currentMillis);
+      SysLogs::logInfo("SYSTEM", "Time to publish sensor data at t=" + String(currentMillis));
       state.lastHTTPPublishTime = currentMillis;
 
       // Only publish if we have data and device is stabilized
@@ -466,7 +444,7 @@ void loop()
       }
       else
       {
-        Serial.println("[HTTP] No data to publish or device not stabilized yet");
+        SysLogs::logInfo("HTTP", "No data to publish or device not stabilized yet");
       }
     }
 
@@ -480,14 +458,15 @@ void loop()
     sleep(currentMillis);
 
     break;
+  }
 
-    // System Mode: Error
-    // This mode is entered when a sensor error is detected
   case SystemMode::ERROR:
+  {
     break; // System Mode: Configuration
-    // This mode is entered when the system is in AP mode or Web Server mode
-  case SystemMode::CONFIG_MODE:
+  }
 
+  case SystemMode::CONFIG_MODE:
+  {
     // Check device stabilization status
     // if (!state.deviceStabilized && currentMillis - state.deviceStartTime >= state.SENSOR_STABILIZATION_TIME)
     // {
@@ -500,8 +479,7 @@ void loop()
     // Check if it's time to read Data from connected Sensors (even in config mode)
     if (currentMillis - state.lastReadingTime >= state.sensorRead_interval)
     {
-      Serial.print("[SYSTEM] Time to take a sensor reading at t=");
-      Serial.println(currentMillis);
+      SysLogs::logInfo("SYSTEM", "Time to take a sensor reading at t=" + String(currentMillis));
       state.lastReadingTime = currentMillis;
 
       // Read sensor, but discard data if not yet stabilized
@@ -519,17 +497,20 @@ void loop()
     // network.processDNSRequests();
     // network.handleClientRequestsWithSensorData(latestReadings);
     break;
+  }
+
   case SystemMode::WAKE_UP:
+  {
 
     // We need to reconnect network after wake-up
-    Serial.println("[SYSTEM] Re-initializing network connections after wake-up...");
+    SysLogs::logInfo("SYSTEM", "Re-initializing network connections after wake-up...");
 
     // Try reconnection with retry logic first
     bool reconnected = network.reconnectToNetwork(3);
 
     if (!reconnected)
     {
-      Serial.println("[SYSTEM] Reconnection failed, trying full WiFi setup...");
+      SysLogs::logInfo("SYSTEM", "Reconnection failed, trying full WiFi setup...");
       WiFiCredentials credentials = network.loadWiFiCredentials();
       network.setupWiFi(credentials, state.idCode, state.apAlwaysOn);
     }
@@ -537,49 +518,59 @@ void loop()
     // Reconnect MQTT if WiFi is connected
     if (network.isConnected())
     {
-      Serial.println("[SYSTEM] Reconnecting MQTT...");
+      SysLogs::logInfo("SYSTEM", "Reconnecting MQTT...");
       mqtt.checkConnection();
       state.currentMode = SystemMode::NORMAL_OPERATION;
 
       // Update time after reconnection
       state.currentTime = network.getRTCTime();
-      Serial.println("[SYSTEM] WiFi reconnected successfully, resuming normal operation");
+      SysLogs::logInfo("SYSTEM", "WiFi reconnected successfully, resuming normal operation");
     }
     else
     {
-      Serial.println("[SYSTEM] WiFi reconnection failed, entering configuration mode");
+      SysLogs::logInfo("SYSTEM", "WiFi reconnection failed, entering configuration mode");
       state.currentMode = SystemMode::CONFIG_MODE;
     }
 
     break;
   }
 
+  case SystemMode::SERIAL_MODE:
+  { // Future implementation for Serial Mode
+    // Thismode if for User ovveride for config via Serial. It will disable any existing debug statements.
+    // This mode will remain until a user exists.
+    // A menu will be presented to the user for configuration options.
+    // For now, just break
+    break;
+  }
+  }
+
   // Add a debug statement every 30 seconds to show the system is still running
   static unsigned long lastHeartbeat = 0;
-  if (currentMillis - lastHeartbeat > 30000 && DEBUG_MODE)
+  if (currentMillis - lastHeartbeat > 30000)
   {
-    Serial.println();
-    Serial.print("[SYSTEM] Heartbeat at t=");
-    Serial.print(currentMillis);
-    Serial.print(", stabilized=");
-    Serial.println(state.deviceStabilized ? "true" : "false");
+    SysLogs::logInfo("SYSTEM", "Heartbeat at t=" + String(currentMillis) + ", stabilized=" + String(state.deviceStabilized ? "true" : "false"));
     lastHeartbeat = currentMillis;
 
     // Print Current time from RTC
-    Serial.print("[SYSTEM] Current time from RTC: ");
-    Serial.print("Unix Epoch: ");
-    Serial.println(state.currentTime);
-    Serial.print("Formatted Time: ");
-    struct tm *timeinfo = localtime((time_t *)&state.currentTime);
-    Serial.print(asctime(timeinfo));
+    SysLogs::logInfo("SYSTEM", "Current time from RTC: Unix Epoch: " + String(state.currentTime));
+
+    // Print Local Time
+    time_t rawtime = static_cast<time_t>(state.currentTime);
+    struct tm *timeinfo = localtime(&rawtime);
+    SysLogs::logInfo("SYSTEM", "Local time: " + String(asctime(timeinfo)));
 
     // Network Status
-    Serial.print("[NETWORK] Connected: ");
-    Serial.println(network.isConnected() ? "Yes" : "No");
-    Serial.print("[NETWORK] AP Mode: ");
-    Serial.println(network.isAPMode() ? "Yes" : "No");
+    SysLogs::logInfo("NETWORK", "Connected: " + String(network.isConnected() ? "Yes" : "No"));
+    SysLogs::logInfo("NETWORK", "AP Mode: " + String(network.isAPMode() ? "Yes" : "No"));
 
-    Serial.println();
+    SysLogs::logInfo("DEBUG", "Time since last HTTP publish: " + String(currentMillis - state.lastHTTPPublishTime) + " ms, Interval: " + String(state.httpPublishInterval) + " ms");
+
+    // add time remaining and is time to publish boolen
+    unsigned long timeSinceLastPublish = currentMillis - state.lastHTTPPublishTime;
+    unsigned long timeRemaining = (timeSinceLastPublish >= state.httpPublishInterval) ? 0 : (state.httpPublishInterval - timeSinceLastPublish);
+    SysLogs::logInfo("DEBUG", "Time remaining until next HTTP publish: " + String(timeRemaining) + " ms");
+    SysLogs::logInfo("DEBUG", "Is it time to publish? " + String((timeSinceLastPublish >= state.httpPublishInterval) ? "Yes" : "No"));
   }
 
   // Short delay to prevent busy-waiting
