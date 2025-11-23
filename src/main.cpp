@@ -1,11 +1,11 @@
 /**
  * @file main.cpp
  * @brief Main firmware for Garden Guardian Temperature & Humidity Monitor
- * 
+ *
  * ESP32-based greenhouse monitoring system that reads DHT sensor data, manages
  * network connectivity (WiFi/AP modes), publishes data via MQTT/HTTP, and supports
  * deep sleep power management for battery operation.
- * 
+ *
  * System supports multiple operating modes:
  * - INITIALIZING: Boot and initial configuration
  * - NORMAL_OPERATION: Regular sensor reading and data publishing
@@ -81,7 +81,7 @@ bool publishDataWithHTTP();
 
 /**
  * @brief Load and apply device-specific settings from storage
- * 
+ *
  * Uses the base configuration system with a device-specific applier
  * to load and apply temperature/humidity monitor settings.
  */
@@ -96,7 +96,7 @@ void loadDeviceSettings()
 
 /**
  * @brief Setup network connections (WiFi/AP mode)
- * 
+ *
  * Initializes WiFi connection with stored credentials, performs NTP time
  * synchronization, and falls back to RTC if NTP fails. Configures access
  * point mode if WiFi connection fails.
@@ -137,7 +137,7 @@ void setupNetwork()
 
 /**
  * @brief Initialize MQTT connection to AWS IoT Core
- * 
+ *
  * Configures and connects to AWS IoT Core if WiFi is connected and not in AP mode.
  * Combines device ID with ID code for full device identifier.
  */
@@ -156,12 +156,17 @@ void initializeMQTT()
  * @brief Read sensor data from all connected sensors
  * @param discardReading If true, updates latest readings but doesn't store for publishing
  * @return true if all sensor reads successful, false if any failed
- * 
+ *
  * Acts as a wrapper for specific sensor reading functions. Currently only reads DHT data
  * but designed to support multiple sensor types in the future.
  */
 bool readSensorData(bool discardReading)
 {
+
+  SysLogs::println();
+  SysLogs::printSectionHeader("Data Collection Starting");
+  SysLogs::logInfo("SENSOR", "Reading sensor data at t=" + String(millis()));
+
   if (!readDHTData(discardReading))
   {
     SysLogs::logError("Failed to read DHT data");
@@ -173,21 +178,23 @@ bool readSensorData(bool discardReading)
     state.sensorError = false;
     return true;
   }
+
+  sensorDataManager.printAllSensorData();
+
+  SysLogs::printSectionHeader("Data Collection Complete");
+  SysLogs::println();
 }
 
 /**
  * @brief Read temperature and humidity data from DHT sensor
  * @param discardReading If true, updates latest readings but doesn't store for publishing
  * @return true if readings are valid, false if sensor read failed
- * 
+ *
  * Reads temperature and humidity from DHT sensor, updates latest readings for web display,
  * and optionally stores data for publishing. Handles sensor errors and invalid readings.
  */
 bool readDHTData(bool discardReading)
 {
-  SysLogs::println();
-  SysLogs::printSectionHeader("Data Collection Starting");
-  SysLogs::logInfo("SENSOR", "Reading sensor data at t=" + String(millis()));
 
   // Read temperature and humidity
   float temp = dhtSensor.readTemperature();
@@ -216,14 +223,11 @@ bool readDHTData(bool discardReading)
     latestReadings.temperatureStatus = status;
     latestReadings.humidityStatus = status;
     latestReadings.hasValidData = true;
-
-    SysLogs::logInfo("SENSOR", "Latest readings updated - Temp: " + String(temp) + "°C, Humidity: " + String(hum) + "%");
   }
 
   // Only update the stored values for publishing if we're not discarding the reading
   if (!discardReading)
   {
-    SysLogs::logInfo("SENSOR", "Reading stored and ready for transmission");
 
     sensorDataManager.addSensorData({.sensorID = "DHT-" + state.idCode,
                                      .sensorType = {"airTemperature"},
@@ -247,16 +251,13 @@ bool readDHTData(bool discardReading)
     SysLogs::logInfo("SENSOR", "But latest readings updated for web display");
   }
 
-  SysLogs::printSectionHeader("Data Collection Complete");
-  SysLogs::println();
-
   return !isnan(temp) && !isnan(hum);
 }
 
 /**
  * @brief Publish sensor data via MQTT to AWS IoT Core
  * @return true if all data published successfully, false if any publish failed
- * 
+ *
  * Iterates through all collected sensor data and publishes each item to AWS IoT Core
  * via MQTT. Converts data to JSON format before transmission. Includes delays between
  * publishes to prevent overwhelming the broker.
@@ -306,7 +307,7 @@ bool publishDataWithMQTT()
 /**
  * @brief Publish sensor data via HTTP POST request
  * @return true if data published successfully, false otherwise
- * 
+ *
  * Publishes all collected sensor data via HTTP to a remote server.
  * Clears the sensor data buffer on successful transmission.
  */
@@ -336,7 +337,7 @@ bool publishDataWithHTTP()
 /**
  * @brief Enter deep sleep mode with proper WiFi cleanup
  * @param currentMillis Current system time in milliseconds
- * 
+ *
  * Calculates optimal sleep duration based on next scheduled sensor reading or publish event.
  * Properly disconnects WiFi and MQTT before entering ESP32 light sleep mode. Wakes up
  * via timer interrupt.
@@ -378,7 +379,7 @@ void sleep(unsigned long currentMillis)
 
 /**
  * @brief Main system setup function
- * 
+ *
  * Initializes serial communication, sensors, network connections, and MQTT.
  * Called once at system boot. Loads device settings from storage and configures
  * all system components before entering the main loop.
@@ -424,7 +425,7 @@ void setup()
 
 /**
  * @brief Main system loop function
- * 
+ *
  * Implements a state machine that handles different operating modes:
  * - INITIALIZING: Determines initial operating mode (normal or config)
  * - NORMAL_OPERATION: Regular sensor reading, data publishing, and sleep cycles
@@ -432,7 +433,7 @@ void setup()
  * - WAKE_UP: Recovery and reconnection after sleep
  * - SERIAL_MODE: Serial configuration interface (future implementation)
  * - ERROR: Error handling state
- * 
+ *
  * Runs continuously after setup() completes.
  */
 void loop()
@@ -486,7 +487,6 @@ void loop()
     // Check if it's time to read Data from connected Sensors
     if (currentMillis - state.lastReadingTime >= state.sensorRead_interval)
     {
-      SysLogs::logInfo("SYSTEM", "Time to take a sensor reading at t=" + String(currentMillis));
       state.lastReadingTime = currentMillis;
 
       // Read sensor, but discard data if not yet stabilized
@@ -497,7 +497,6 @@ void loop()
       // }
 
       bool readSuccess = readSensorData(false); // use DiscardReading as param for stabilization
-      sensorDataManager.printAllSensorData();
       state.lastSensorRead = state.currentTime;
 
       if (!readSuccess)
@@ -619,7 +618,7 @@ void loop()
   }
 
   case SystemMode::SERIAL_MODE:
-  { 
+  {
     // Future implementation for Serial Mode
     // This mode is for user override for config via Serial. It will disable any existing debug statements.
     // This mode will remain until a user exits.

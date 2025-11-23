@@ -136,7 +136,7 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     unsigned long startAttempt = millis();
 
     SysLogs::print("Attempting to connect to SSID: ");
-    SysLogs::print(ssid);
+    SysLogs::println(ssid);
 
     // Try to load and apply saved network configuration first
     IPAddress savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2;
@@ -524,7 +524,7 @@ void NetworkConnections::scanNetworks()
     int numNetworks = WiFi.scanNetworks();
 
     SysLogs::print("Number of networks found: ");
-    SysLogs::println(numNetworks);
+    SysLogs::println(String(numNetworks));
 
     if (numNetworks <= 0)
     {
@@ -546,11 +546,11 @@ void NetworkConnections::scanNetworks()
             availableNetworks += WiFi.SSID(i);
             availableNetworks += "</option>";
 
-            SysLogs::print(i + 1);
+            SysLogs::print(String(i + 1));
             SysLogs::print(": ");
             SysLogs::print(WiFi.SSID(i));
             SysLogs::print(" (RSSI: ");
-            SysLogs::print(WiFi.RSSI(i));
+            SysLogs::print(String(WiFi.RSSI(i)));
             SysLogs::print(" dBm) ");
             SysLogs::print(" [");
             SysLogs::print(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "Open" : "Secured");
@@ -889,13 +889,13 @@ DeviceSettings NetworkConnections::loadDeviceSettings()
 
     // Display loaded settings
     SysLogs::print("Sleep Duration: ");
-    SysLogs::print(settings.sleepDuration / 1000000ULL);
+    SysLogs::print(String(settings.sleepDuration / 1000000ULL));
     SysLogs::logInfo("NETWORK", " seconds");
     SysLogs::print("Sensor Read Interval: ");
-    SysLogs::print(settings.sensorReadInterval / 1000);
+    SysLogs::print(String(settings.sensorReadInterval / 1000));
     SysLogs::logInfo("NETWORK", " seconds");
     SysLogs::print("Stabilization Time: ");
-    SysLogs::print(settings.sensorStabilizationTime / 1000);
+    SysLogs::print(String(settings.sensorStabilizationTime / 1000));
     SysLogs::logInfo("NETWORK", " seconds");
     SysLogs::print("Device ID: ");
     SysLogs::println(settings.deviceID);
@@ -966,8 +966,7 @@ void NetworkConnections::printNetworkInfo()
     SysLogs::println(ip.toString());
 
     SysLogs::print("Signal Strength (RSSI): ");
-    SysLogs::print(WiFi.RSSI());
-    SysLogs::logInfo("NETWORK", " dBm");
+    SysLogs::println(String(WiFi.RSSI()) + " dBm");
     SysLogs::logInfo("NETWORK", "----------------------------------------");
 }
 
@@ -1555,13 +1554,13 @@ void NetworkConnections::processAdvancedConfig(WiFiClient &client, String reques
 
     SysLogs::logInfo("NETWORK", "Parsed Settings:");
     SysLogs::print("Sleep Duration: ");
-    SysLogs::print(newSettings.sleepDuration / 1000000ULL);
+    SysLogs::print(String(newSettings.sleepDuration / 1000000ULL));
     SysLogs::logInfo("NETWORK", " seconds");
     SysLogs::print("Sensor Interval: ");
-    SysLogs::print(newSettings.sensorReadInterval / 1000);
+    SysLogs::print(String(newSettings.sensorReadInterval / 1000));
     SysLogs::logInfo("NETWORK", " seconds");
     SysLogs::print("Stabilization Time: ");
-    SysLogs::print(newSettings.sensorStabilizationTime / 1000);
+    SysLogs::print(String(newSettings.sensorStabilizationTime / 1000));
     SysLogs::logInfo("NETWORK", " seconds");
     SysLogs::print("Device ID: ");
     SysLogs::println(newSettings.deviceID);
