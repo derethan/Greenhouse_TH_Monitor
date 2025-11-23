@@ -776,15 +776,15 @@ void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
 {
     Serial.println("Saving device settings to NVS...");
     preferences.begin("device", false); // Read-write mode    
-    preferences.putULong64("sleepDuration", settings.sleepDuration);
-    preferences.putULong("sensorInterval", settings.sensorReadInterval);
-    preferences.putULong("stabilizationTime", settings.sensorStabilizationTime);
+    preferences.putULong64("sleepDur", settings.sleepDuration);
+    preferences.putULong("sensorInt", settings.sensorReadInterval);
+    preferences.putULong("stabilTime", settings.sensorStabilizationTime);
     preferences.putString("deviceID", settings.deviceID);
     preferences.putString("idCode", settings.idCode);
-    preferences.putBool("ntpRetryEnabled", settings.ntpRetryEnabled);
-    preferences.putULong("ntpRetryInterval", settings.ntpRetryInterval);
-    preferences.putBool("httpPublishEnabled", settings.httpPublishEnabled);
-    preferences.putULong("httpPublishInterval", settings.httpPublishInterval);
+    preferences.putBool("ntpRetry", settings.ntpRetryEnabled);
+    preferences.putULong("ntpRetryInt", settings.ntpRetryInterval);
+    preferences.putBool("httpPubEn", settings.httpPublishEnabled);
+    preferences.putULong("httpPubInt", settings.httpPublishInterval);
 
     preferences.end();
     Serial.println("Device settings successfully saved to NVS.");
@@ -797,15 +797,15 @@ DeviceSettings NetworkConnections::loadDeviceSettings()
 
     Serial.println("Loading device settings from NVS storage...");
     preferences.begin("device", true); // Read-only mode
-    settings.sleepDuration = preferences.getULong64("sleepDuration", 15ULL * 1000000ULL);
-    settings.sensorReadInterval = preferences.getULong("sensorInterval", 30000);
-    settings.sensorStabilizationTime = preferences.getULong("stabilizationTime", 60000);
+    settings.sleepDuration = preferences.getULong64("sleepDur", 15ULL * 1000000ULL);
+    settings.sensorReadInterval = preferences.getULong("sensorInt", 30000);
+    settings.sensorStabilizationTime = preferences.getULong("stabilTime", 15000);
     settings.deviceID = preferences.getString("deviceID", DEVICE_ID);
     settings.idCode = preferences.getString("idCode", IDCODE);
-    settings.ntpRetryEnabled = preferences.getBool("ntpRetryEnabled", true);
-    settings.ntpRetryInterval = preferences.getULong("ntpRetryInterval", 3600000);
-    settings.httpPublishEnabled = preferences.getBool("httpPublishEnabled", true);
-    settings.httpPublishInterval = preferences.getULong("httpPublishInterval", 300000);
+    settings.ntpRetryEnabled = preferences.getBool("ntpRetry", true);
+    settings.ntpRetryInterval = preferences.getULong("ntpRetryInt", 3600000);
+    settings.httpPublishEnabled = preferences.getBool("httpPubEn", true);
+    settings.httpPublishInterval = preferences.getULong("httpPubInt", 30000);
 
     preferences.end();
 
@@ -815,8 +815,8 @@ DeviceSettings NetworkConnections::loadDeviceSettings()
     // Check if we have at least some custom settings (not all defaults)
     if (preferences.begin("device", true))
     {
-        bool hasSettings = preferences.isKey("sleepDuration") ||
-                           preferences.isKey("sensorInterval") ||
+        bool hasSettings = preferences.isKey("sleepDur") ||
+                           preferences.isKey("sensorInt") ||
                            preferences.isKey("deviceID");
         preferences.end();
 

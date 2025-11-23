@@ -423,6 +423,25 @@ void loop()
       state.lastSensorRead = state.currentTime;
     }
 
+    // Debugging, log time to publish details
+    if (DEBUG_MODE)
+    {
+      Serial.print("[DEBUG] Time since last HTTP publish: ");
+      Serial.print(currentMillis - state.lastHTTPPublishTime);
+      Serial.print(" ms, Interval: ");
+      Serial.print(state.httpPublishInterval);
+      Serial.println(" ms");
+
+      // add time remaining and is time to publish boolen
+      unsigned long timeSinceLastPublish = currentMillis - state.lastHTTPPublishTime;
+      unsigned long timeRemaining = (timeSinceLastPublish >= state.httpPublishInterval) ? 0 : (state.httpPublishInterval - timeSinceLastPublish);
+      Serial.print("[DEBUG] Time remaining until next HTTP publish: ");
+      Serial.print(timeRemaining);
+      Serial.println(" ms");
+      Serial.print("[DEBUG] Is it time to publish? ");
+      Serial.println((timeSinceLastPublish >= state.httpPublishInterval) ? "Yes" : "No");
+
+    }
     // Check if it's time to publish data via HTTP (non-blocking timer)
     if (state.httpPublishEnabled && network.isConnected() &&
         (currentMillis - state.lastHTTPPublishTime >= state.httpPublishInterval))
@@ -504,24 +523,24 @@ void loop()
 
     // We need to reconnect network after wake-up
     Serial.println("[SYSTEM] Re-initializing network connections after wake-up...");
-    
+
     // Try reconnection with retry logic first
     bool reconnected = network.reconnectToNetwork(3);
-    
+
     if (!reconnected)
     {
       Serial.println("[SYSTEM] Reconnection failed, trying full WiFi setup...");
       WiFiCredentials credentials = network.loadWiFiCredentials();
       network.setupWiFi(credentials, state.idCode, state.apAlwaysOn);
     }
-    
+
     // Reconnect MQTT if WiFi is connected
     if (network.isConnected())
     {
       Serial.println("[SYSTEM] Reconnecting MQTT...");
       mqtt.checkConnection();
       state.currentMode = SystemMode::NORMAL_OPERATION;
-      
+
       // Update time after reconnection
       state.currentTime = network.getRTCTime();
       Serial.println("[SYSTEM] WiFi reconnected successfully, resuming normal operation");
@@ -531,7 +550,7 @@ void loop()
       Serial.println("[SYSTEM] WiFi reconnection failed, entering configuration mode");
       state.currentMode = SystemMode::CONFIG_MODE;
     }
-    
+
     break;
   }
 
@@ -563,32 +582,6 @@ void loop()
     Serial.println();
   }
 
-// Short delay to prevent busy-waiting
+  // Short delay to prevent busy-waiting
   delay(100);
 }
-
-// Bug 1
-// System time synchronized successfully via NTP
-// Connecting to AWS IoT broker: a2ga0ktmn5tic5-ats.iot.us-east-1.amazonaws.com
-// [572457][E][ssl_client.cpp:37] _handle_error(): [data_to_read():361]: (-76) UNKNOWN ERROR CODE (004C)
-// You're connected to AWS IoT Core!
-
-// Bug 2
-// [SYSTEM] Woke up from sleep
-// [SYSTEM] Re-initializing network connections after wake-up...
-// Loading Credentials from NVS storage...
-// Wi-Fi credentials loaded successfully from NVS.
-// SSID: BATECH_Camera
-// Configuring station mode only
-// Attempting to connect to SSID: BATECH_Camera........................................
-// WiFi connection failed.
-// Scanning for WiFi networks...
-// Number of networks found: 3
-// Networks found:
-// 1: BATECH_Camera (RSSI: -46 dBm)  [Secured]
-// 2: BATECH_Gateway (RSSI: -55 dBm)  [Secured]
-// 3: BELL799 (RSSI: -94 dBm)  [Secured]
-// Creating access point named: GG-TH-A9C5ECF3
-// Access Point started successfully
-// AP SSID: GG-TH-A9C5ECF3
-// AP IP Address: 192.168.4.1
