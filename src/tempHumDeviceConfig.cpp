@@ -1,12 +1,21 @@
+/**
+ * @file tempHumDeviceConfig.cpp
+ * @brief Temperature/Humidity device specific configuration implementation
+ * 
+ * Implements the device-specific settings applier for temperature and humidity
+ * monitoring devices, applying configuration values to the system state.
+ */
+
 #include "../include/tempHumDeviceConfig.h"
+#include "../include/base/sysLogs.h"
 #include "state.h"
 
 extern struct SystemState state;
 
-/*****************************************
- * Temperature/Humidity Device Specific Implementation
- *****************************************/
-
+/**
+ * @brief Apply loaded settings to the device-specific state
+ * @param settings The device settings structure containing configuration values
+ */
 void TempHumDeviceSettingsApplier::applySettings(const DeviceSettings &settings)
 {
     // Apply loaded settings to the device-specific state
@@ -19,28 +28,21 @@ void TempHumDeviceSettingsApplier::applySettings(const DeviceSettings &settings)
     state.httpPublishInterval = settings.httpPublishInterval;
 }
 
+/**
+ * @brief Display the applied device settings to the log
+ * @param settings The device settings structure to display
+ */
 void TempHumDeviceSettingsApplier::displaySettings(const DeviceSettings &settings)
 {
-    Serial.println("[SYSTEM] Device settings applied:");
-    Serial.print("  Sleep Duration: ");
-    Serial.print(settings.sleepDuration / 1000000ULL);
-    Serial.println(" seconds");
-    Serial.print("  Sensor Read Interval: ");
-    Serial.print(settings.sensorReadInterval / 1000);
-    Serial.println(" seconds");
-    Serial.print("  Stabilization Time: ");
-    Serial.print(settings.sensorStabilizationTime / 1000);
-    Serial.println(" seconds");
-    Serial.print("  Device ID: ");
-    Serial.println(settings.deviceID);
-    Serial.print("  ID Code: ");
-    Serial.println(settings.idCode);
-    Serial.print("  HTTP Publishing: ");
-    Serial.println(settings.httpPublishEnabled ? "Enabled" : "Disabled");
+    SysLogs::logInfo("SYSTEM", "Device settings applied:");
+    SysLogs::logInfo("SYSTEM", "  Sleep Duration: " + String(settings.sleepDuration / 1000000ULL) + " seconds");
+    SysLogs::logInfo("SYSTEM", "  Sensor Read Interval: " + String(settings.sensorReadInterval / 1000) + " seconds");
+    SysLogs::logInfo("SYSTEM", "  Stabilization Time: " + String(settings.sensorStabilizationTime / 1000) + " seconds");
+    SysLogs::logInfo("SYSTEM", "  Device ID: " + settings.deviceID);
+    SysLogs::logInfo("SYSTEM", "  ID Code: " + settings.idCode);
+    SysLogs::logInfo("SYSTEM", "  HTTP Publishing: " + String(settings.httpPublishEnabled ? "Enabled" : "Disabled"));
     if (settings.httpPublishEnabled)
     {
-        Serial.print("  HTTP Publish Interval: ");
-        Serial.print(settings.httpPublishInterval / 1000);
-        Serial.println(" seconds");
+        SysLogs::logInfo("SYSTEM", "  HTTP Publish Interval: " + String(settings.httpPublishInterval / 1000) + " seconds");
     }
 }

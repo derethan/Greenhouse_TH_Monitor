@@ -1,5 +1,15 @@
+/**
+ * @file mqttConnection.cpp
+ * @brief MQTT connection management for AWS IoT Core integration
+ * 
+ * Handles MQTT client initialization, connection management, message publishing,
+ * and incoming message handling for AWS IoT Core. Includes configuration update
+ * handling and device management features.
+ */
+
 #include "mqttConnection.h"
 #include "NetworkConnections.h"
+#include "base/sysLogs.h"
 
 // ===== Private Static Members =====
 static WiFiClient wifiClient; // WiFi client for network connection
@@ -12,7 +22,13 @@ static bool isMQTTConnected = false; // Track connection status
 static const char broker[] = AWS_IOT_ENDPOINT;
 String MqttConnection::deviceID = "";
 
-// ===== Initialization Functions =====
+/**
+ * @brief Initialize MQTT client with AWS IoT credentials
+ * @param deviceID The unique device identifier for this MQTT client
+ * 
+ * Configures the secure WiFi client with AWS IoT certificates and sets up
+ * the MQTT client with the appropriate endpoint and message handler.
+ */
 void MqttConnection::initializeMQTT(const char *deviceID)
 {
     MqttConnection::deviceID = String(deviceID); // Store the deviceID
@@ -29,10 +45,15 @@ void MqttConnection::initializeMQTT(const char *deviceID)
     mqttClient.onMessage(messageHandler);
 }
 
+/**
+ * @brief Attempt to connect to the AWS IoT MQTT broker
+ * 
+ * Performs connection attempts with retry logic and timeout constraints.
+ * Subscribes to configuration topic upon successful connection.
+ */
 void MqttConnection::connectMQTT()
 {
-    Serial.print("Connecting to AWS IoT broker: ");
-    Serial.println(broker);
+    SysLogs::logInfo("MQTT", "Connecting to AWS IoT broker: " + String(broker));
 
     const int maxAttempts = 5;
     const unsigned long maxDuration = 60000;
@@ -41,27 +62,32 @@ void MqttConnection::connectMQTT()
 
     while (!mqttClient.connect(deviceID.c_str(), false))
     {
-        Serial.print(".");
+        SysLogs::print(".");
         delay(100);
         attempts++;
 
         if (attempts >= maxAttempts || (millis() - startTime) >= maxDuration)
         {
-            Serial.println("Failed to connect to AWS IoT Core within the allowed attempts/duration.");
+            SysLogs::logError("Failed to connect to AWS IoT Core within the allowed attempts/duration.");
             isMQTTConnected = false;
             return;
         }
     }
 
     isMQTTConnected = true;
-    Serial.println("You're connected to AWS IoT Core!");
+    SysLogs::logSuccess("MQTT", "Connected to AWS IoT Core!");
 
     // Subscribe to incoming message topic
-    Serial.println("Subscribing to configuration topic: " + String(AWS_IOT_CONFIGURATION_TOPIC) + deviceID);
+    SysLogs::logInfo("MQTT", "Subscribing to configuration topic: " + String(AWS_IOT_CONFIGURATION_TOPIC) + deviceID);
     mqttClient.subscribe(String(AWS_IOT_CONFIGURATION_TOPIC) + deviceID);
 }
 
-// ===== Connection Management =====
+/**
+ * @brief Check MQTT connection status and reconnect if necessary
+ * 
+ * Maintains the MQTT connection by checking connectivity and calling
+ * the MQTT client loop. Reconnects if the connection is lost.
+ */
 void MqttConnection::checkConnection()
 {
     if (!mqttClient.connected())
@@ -71,45 +97,63 @@ void MqttConnection::checkConnection()
     mqttClient.loop(); // Keep the MQTT connection alive
 }
 
+/**
+ * @brief Disconnect from the MQTT broker
+ * 
+ * Gracefully disconnects from the MQTT broker if currently connected.
+ */
 void MqttConnection::disconnect()
 {
     if (mqttClient.connected())
     {
-        Serial.println("[MQTT] Disconnecting from MQTT broker...");
+        SysLogs::logInfo("MQTT", "Disconnecting from MQTT broker...");
         mqttClient.disconnect();
         delay(100);
-        Serial.println("[MQTT] Disconnected from MQTT broker");
+        SysLogs::logInfo("MQTT", "Disconnected from MQTT broker");
     }
 }
 
+/**
+ * @brief Check if currently connected to the MQTT broker
+ * @return true if connected, false otherwise
+ */
 bool MqttConnection::isConnected()
 {
     return mqttClient.connected();
 }
 
-// ===== Message Handling =====
+/**
+ * @brief Publish a message to the AWS IoT MQTT broker
+ * @param message The message string to publish
+ * @return true if published successfully, false otherwise
+ */
 bool MqttConnection::publishMessage(String message)
 {
-    Serial.println("Publishing message");
+    SysLogs::logDebug("MQTT", "Publishing message");
 
     if (mqttClient.publish(AWS_IOT_PUBLISH_TOPIC, message))
     {
-
-        Serial.println("Message sent successfully");
+        SysLogs::logDebug("MQTT", "Message sent successfully");
         return true;
     }
 
-    Serial.println("Failed to send message");
+    SysLogs::logError("Failed to send MQTT message");
     return false;
 }
 
-// handles the incoming messages from AWS IoT Core
+/**
+ * @brief Handle incoming MQTT messages from AWS IoT Core
+ * @param topic The MQTT topic the message was received on
+ * @param payload The message payload content
+ * 
+ * Routes incoming messages to appropriate handlers based on topic.
+ */
 void MqttConnection::messageHandler(String &topic, String &payload)
 {
-    Serial.println("received:");
-    Serial.println("- topic: " + topic);
-    Serial.println("- payload:");
-    Serial.println(payload);
+    SysLogs::logInfo("MQTT", "Received message:");
+    SysLogs::logInfo("MQTT", "- topic: " + topic);
+    SysLogs::logInfo("MQTT", "- payload:");
+    SysLogs::println(payload);
 
     // Process the incoming data as json object, Then conditionally handle based on topic
     if (topic == AWS_IOT_CONFIGURATION_TOPIC + deviceID)
@@ -118,12 +162,19 @@ void MqttConnection::messageHandler(String &topic, String &payload)
     }
 }
 
+/**
+ * @brief Handle configuration update messages from AWS IoT
+ * @param payload The JSON configuration payload
+ * 
+ * Processes configuration updates including collection intervals, publish intervals,
+ * and WiFi settings. Sends acknowledgments for successful updates.
+ */
 void MqttConnection::handleConfigurationTopic(String &payload)
 {
     // Verify we have a valid payload
     if (payload.length() == 0)
     {
-        Serial.println("Error: Empty calibration payload");
+        SysLogs::logError("Empty calibration payload");
         return;
     }
 
@@ -134,8 +185,7 @@ void MqttConnection::handleConfigurationTopic(String &payload)
     // Check for parsing errors
     if (error)
     {
-        Serial.print("Error parsing JSON: ");
-        Serial.println(error.c_str());
+        SysLogs::logError("Error parsing JSON: " + String(error.c_str()));
         return;
     }
 
@@ -236,6 +286,10 @@ void MqttConnection::handleConfigurationTopic(String &payload)
     }
 }
 
+/**
+ * @brief Get current timestamp as formatted string
+ * @return Timestamp string in HH:MM:SS.mmm format
+ */
 String MqttConnection::getTimestamp()
 {
     unsigned long now = NetworkConnections::getTime() * 1000;
@@ -250,6 +304,13 @@ String MqttConnection::getTimestamp()
     return timestamp;
 }
 
+/**
+ * @brief Log a debug message and optionally publish to AWS IoT
+ * @param message The debug message to log
+ * @param publishToAWS If true, publish the message to AWS IoT debug topic
+ * 
+ * Creates a JSON-formatted debug message with device ID and timestamp.
+ */
 void MqttConnection::debug(const String &message, bool publishToAWS)
 {
 
@@ -261,8 +322,8 @@ void MqttConnection::debug(const String &message, bool publishToAWS)
     jsonMessage += "\"message\":\"" + message + "\"";
     jsonMessage += "}";
 
-    // Always print to Serial
-    Serial.println(jsonMessage);
+    // Always print to log
+    SysLogs::logDebug("MQTT", jsonMessage);
 
     // Publish to AWS if requested and connected
     if (publishToAWS && mqttClient.connected())
@@ -272,6 +333,13 @@ void MqttConnection::debug(const String &message, bool publishToAWS)
     }
 }
 
+/**
+ * @brief Log an error message and optionally publish to AWS IoT
+ * @param message The error message to log
+ * @param publishToAWS If true, publish the error to AWS IoT error topic
+ * 
+ * Creates a JSON-formatted error message with device ID and timestamp.
+ */
 void MqttConnection::errorLog(const String &message, bool publishToAWS)
 {
     unsigned long now = NetworkConnections::getTime() * 1000;
@@ -282,8 +350,8 @@ void MqttConnection::errorLog(const String &message, bool publishToAWS)
     jsonMessage += "\"error\":\"" + message + "\"";
     jsonMessage += "}";
 
-    // Always print to Serial
-    Serial.println(jsonMessage);
+    // Always log the error
+    SysLogs::logError(jsonMessage);
 
     // Publish to AWS if requested and connected
     if (publishToAWS && mqttClient.connected())

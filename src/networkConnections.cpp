@@ -1,3 +1,15 @@
+/**
+ * @file networkConnections.cpp
+ * @brief Network connection management for WiFi, NTP, HTTP, and device configuration
+ *
+ * Handles all network-related functionality including:
+ * - WiFi station and access point modes
+ * - NTP time synchronization with RTC fallback
+ * - HTTP client for data publishing
+ * - Device settings storage and retrieval from NVS
+ * - Network reconnection logic
+ */
+
 #include "NetworkConnections.h"
 #include <Preferences.h> // Required for NVS
 #include <esp_task_wdt.h>
@@ -6,10 +18,9 @@
 #include <ArduinoJson.h>
 #include "dataProvider.h" // Include for sensor data access
 #include "server.h"       // Include for server configuration
+#include "base/sysLogs.h" // Include for logging functions
 
-//------------------------------------------------------------------------------
 // Global Variables
-//------------------------------------------------------------------------------
 int wifiStatus = WL_IDLE_STATUS; // WiFi radio status
 int status = WL_IDLE_STATUS;     // WiFi connection status
 bool apMode = false;             // Tracks if the device is in AP mode
@@ -22,15 +33,21 @@ static WiFiUDP ntpUDP; // Used for NTP requests
 
 Preferences preferences;
 
-//------------------------------------------------------------------------------
-// Initialization Functions
-//------------------------------------------------------------------------------
+/**
+ * @brief Setup WiFi connection in station mode, AP mode, or dual mode
+ * @param credentials WiFi credentials structure containing SSID and password
+ * @param idCode Unique device identifier code for AP name
+ * @param apOn If true, run in dual mode (AP + Station), otherwise station only
+ *
+ * Configures WiFi mode based on parameters. In dual mode, both AP and station
+ * are active. In station-only mode, falls back to AP if connection fails.
+ */
 void NetworkConnections::setupWiFi(WiFiCredentials credentials, String idCode, bool apOn)
 {
     // If ApOn is true, then the AP mode is always on, use Wifi Mode for both Station and Ap
     if (apOn)
     {
-        Serial.println("Configuring dual mode (AP + Station)");
+        SysLogs::logInfo("NETWORK", "Configuring dual mode (AP + Station)");
         WiFi.mode(WIFI_AP_STA);
 
         // Setup AP first
@@ -46,13 +63,13 @@ void NetworkConnections::setupWiFi(WiFiCredentials credentials, String idCode, b
             }
             else
             {
-                Serial.println("Failed to connect to WiFi, but AP remains active");
+                SysLogs::logWarning("Failed to connect to WiFi, but AP remains active");
             }
         }
     }
     else
     {
-        Serial.println("Configuring station mode only");
+        SysLogs::logInfo("NETWORK", "Configuring station mode only");
         WiFi.mode(WIFI_STA);
         delay(1000);
 
@@ -79,13 +96,20 @@ void NetworkConnections::setupWiFi(WiFiCredentials credentials, String idCode, b
 // Core Network Functions
 //------------------------------------------------------------------------------
 
+/**
+ * @brief Load WiFi credentials from NVS (Non-Volatile Storage)
+ * @return WiFiCredentials structure containing SSID, password, and validity flag
+ *
+ * Attempts to load WiFi credentials from ESP32's NVS storage. Returns a structure
+ * with the valid flag set to false if credentials are missing or empty.
+ */
 WiFiCredentials NetworkConnections::loadWiFiCredentials()
 {
     WiFiCredentials credentials;
     credentials.valid = false; // Default to invalid
 
     // Attempt to load credentials from NVS
-    Serial.println("Loading Credentials from NVS storage...");
+    SysLogs::logInfo("NETWORK", "Loading Credentials from NVS storage...");
     preferences.begin("wifi", true); // Read-only mode
     credentials.ssid = preferences.getString("ssid", "");
     credentials.password = preferences.getString("password", "");
@@ -94,13 +118,12 @@ WiFiCredentials NetworkConnections::loadWiFiCredentials()
     if (credentials.ssid.length() > 0 && credentials.password.length() > 0)
     {
         credentials.valid = true;
-        Serial.println("Wi-Fi credentials loaded successfully from NVS.");
-        Serial.print("SSID: ");
-        Serial.println(credentials.ssid);
+        SysLogs::logSuccess("NETWORK", "Wi-Fi credentials loaded successfully from NVS.");
+        SysLogs::logInfo("NETWORK", "SSID: " + credentials.ssid);
     }
     else
     {
-        Serial.println("No Wi-Fi credentials found in NVS. Starting AP mode.");
+        SysLogs::logWarning("No Wi-Fi credentials found in NVS. Starting AP mode.");
     }
 
     return credentials;
@@ -112,22 +135,22 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     const unsigned long TIMEOUT = 20000; // 20 seconds in milliseconds
     unsigned long startAttempt = millis();
 
-    Serial.print("Attempting to connect to SSID: ");
-    Serial.print(ssid);
+    SysLogs::print("Attempting to connect to SSID: ");
+    SysLogs::println(ssid);
 
     // Try to load and apply saved network configuration first
     IPAddress savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2;
     if (loadNetworkConfig(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
     {
-        Serial.println(" (using saved IP configuration)");
+        SysLogs::logInfo("NETWORK", " (using saved IP configuration)");
         if (!WiFi.config(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
         {
-            Serial.println("Failed to configure static IP, falling back to DHCP");
+            SysLogs::logInfo("NETWORK", "Failed to configure static IP, falling back to DHCP");
         }
     }
     else
     {
-        Serial.println(" (using DHCP)");
+        SysLogs::logInfo("NETWORK", " (using DHCP)");
     }
 
     WiFi.begin(ssid.c_str(), password.c_str());
@@ -135,25 +158,25 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     // Wait for connection or timeout
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < TIMEOUT)
     {
-        Serial.print(".");
+        SysLogs::print(".");
         delay(500); // Check every 500ms
 
         // Print progress every 3 seconds
         if ((millis() - startAttempt) % 3000 == 0)
         {
-            Serial.printf("\nStill trying to connect... (%.1f seconds elapsed)\n",
-                          (millis() - startAttempt) / 1000.0);
+            SysLogs::println();
+            SysLogs::logInfo("NETWORK", "Still trying to connect... (" + String((millis() - startAttempt) / 1000.0, 1) + " seconds elapsed)");
         }
 
         // Feed watchdog if available
         esp_task_wdt_reset();
     }
-    Serial.println();
+    SysLogs::println();
 
     if (WiFi.status() == WL_CONNECTED)
     {
-        Serial.print("Connected to WiFi network: ");
-        Serial.println(ssid);
+        SysLogs::print("Connected to WiFi network: ");
+        SysLogs::println(ssid);
         printNetworkInfo();
 
         // Store successful connection details
@@ -168,7 +191,7 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     }
     else
     {
-        Serial.println("WiFi connection failed.");
+        SysLogs::logInfo("NETWORK", "WiFi connection failed.");
         WiFi.disconnect(); // Clean up the failed connection attempt
         return false;      // Connection failed
     }
@@ -179,24 +202,24 @@ void NetworkConnections::startWebServer()
     // Check if web server is already running
     if (webServerStarted)
     {
-        Serial.println("[WEB] Web server is already running");
+        SysLogs::logInfo("NETWORK", "[WEB] Web server is already running");
         return;
     }
 
-    Serial.println("[WEB] Starting web server on port 80...");
+    SysLogs::logInfo("NETWORK", "[WEB] Starting web server on port 80...");
 
     // Start the web server
     server.begin();
     webServerStarted = true;
 
-    Serial.println("[WEB] Web server started successfully");
-    Serial.print("[WEB] Access the device dashboard at: http://");
-    Serial.println(WiFi.localIP());
-    Serial.println("[WEB] Available endpoints:");
-    Serial.println("[WEB]   / or /index    - Sensor data dashboard");
-    Serial.println("[WEB]   /data          - JSON API endpoint");
-    Serial.println("[WEB]   /config        - WiFi configuration");
-    Serial.println("[WEB]   /advanced      - Advanced device settings");
+    SysLogs::logInfo("NETWORK", "[WEB] Web server started successfully");
+    SysLogs::print("[WEB] Access the device dashboard at: http://");
+    SysLogs::println(WiFi.localIP().toString());
+    SysLogs::logInfo("NETWORK", "[WEB] Available endpoints:");
+    SysLogs::logInfo("NETWORK", "[WEB]   / or /index    - Sensor data dashboard");
+    SysLogs::logInfo("NETWORK", "[WEB]   /data          - JSON API endpoint");
+    SysLogs::logInfo("NETWORK", "[WEB]   /config        - WiFi configuration");
+    SysLogs::logInfo("NETWORK", "[WEB]   /advanced      - Advanced device settings");
 }
 
 unsigned long NetworkConnections::getTime()
@@ -213,17 +236,17 @@ unsigned long NetworkConnections::getTime()
     const unsigned long MIN_VALID_TIME = 1577836800; // Jan 1, 2020 timestamp
     const unsigned long RETRY_DELAY_BASE = 2000;     // Base delay between retries (2 seconds)
 
-    Serial.println("Starting NTP time synchronization...");
+    SysLogs::logInfo("NETWORK", "Starting NTP time synchronization...");
 
     for (int attempt = 1; attempt <= MAX_RETRIES; attempt++)
     {
-        Serial.printf("NTP sync attempt %d/%d\n", attempt, MAX_RETRIES);
+        SysLogs::logInfo("NETWORK", "NTP sync attempt " + String(attempt) + "/" + String(MAX_RETRIES) + "");
 
         // Try each NTP server for this attempt
         for (int serverIndex = 0; serverIndex < numServers; serverIndex++)
         {
             const char *currentServer = ntpServers[serverIndex];
-            Serial.printf("Trying NTP server: %s\n", currentServer);
+            SysLogs::logInfo("NETWORK", "Trying NTP server: " + String(currentServer) + "");
 
             // Configure NTP time synchronization with UTC (no timezone offset)
             configTime(0, 0, currentServer);
@@ -233,7 +256,7 @@ unsigned long NetworkConnections::getTime()
             struct tm timeinfo;
             bool syncSuccess = false;
 
-            Serial.print("Waiting for sync");
+            SysLogs::print("Waiting for sync");
             while ((millis() - startTime < NTP_TIMEOUT))
             {
                 if (getLocalTime(&timeinfo))
@@ -241,17 +264,17 @@ unsigned long NetworkConnections::getTime()
                     syncSuccess = true;
                     break;
                 }
-                Serial.print(".");
+                SysLogs::print(".");
                 delay(500);
 
                 // Feed the watchdog timer to prevent reset during long sync attempts
                 esp_task_wdt_reset();
             }
-            Serial.println();
+            SysLogs::println();
 
             if (!syncSuccess)
             {
-                Serial.printf("NTP server %s timed out after %lu ms\n", currentServer, NTP_TIMEOUT);
+                SysLogs::logWarning("NTP server " + String(currentServer) + " timed out after " + String(NTP_TIMEOUT) + " ms");
                 continue; // Try next server
             }
 
@@ -259,23 +282,22 @@ unsigned long NetworkConnections::getTime()
             struct timeval tv;
             if (gettimeofday(&tv, NULL) != 0)
             {
-                Serial.printf("Failed to obtain time from %s after sync\n", currentServer);
+                SysLogs::logError("Failed to obtain time from " + String(currentServer) + " after sync");
                 continue; // Try next server
             }
 
             // Verify we got a reasonable time (after year 2020)
             if (tv.tv_sec < MIN_VALID_TIME)
             {
-                Serial.printf("NTP server %s returned invalid time: %lu (before 2020)\n",
-                              currentServer, (unsigned long)tv.tv_sec);
+                SysLogs::logWarning("NTP server " + String(currentServer) + " returned invalid time: " + String((unsigned long)tv.tv_sec) + " (before 2020)");
                 continue; // Try next server
             }
 
             // Success! Log the results
-            Serial.printf("NTP synchronization successful with %s!\n", currentServer);
-            Serial.printf("Sync completed in %lu ms\n", millis() - startTime);
-            Serial.printf("Current time (Unix timestamp): %lu\n", (unsigned long)tv.tv_sec);
-            Serial.printf("Current time (Human-readable): %s", ctime(&tv.tv_sec));
+            SysLogs::logSuccess("NETWORK", "NTP synchronization successful with " + String(currentServer) + "!");
+            SysLogs::logInfo("NETWORK", "Sync completed in " + String(millis() - startTime) + " ms");
+            SysLogs::logInfo("NETWORK", "Current time (Unix timestamp): " + String((unsigned long)tv.tv_sec));
+            SysLogs::logInfo("NETWORK", "Current time (Human-readable): " + String(ctime(&tv.tv_sec)));
 
             // The ESP32's RTC is automatically updated by configTime() and getLocalTime()
             return (unsigned long)tv.tv_sec;
@@ -286,8 +308,7 @@ unsigned long NetworkConnections::getTime()
         {
             // Calculate exponential backoff delay: base * 2^(attempt-1)
             unsigned long retryDelay = RETRY_DELAY_BASE * (1 << (attempt - 1));
-            Serial.printf("All NTP servers failed for attempt %d. Retrying in %lu ms...\n",
-                          attempt, retryDelay);
+            SysLogs::logInfo("NETWORK", "All NTP servers failed for attempt " + String(attempt) + ". Retrying in " + String(retryDelay) + " ms...");
 
             // Wait with watchdog feeding
             unsigned long delayStart = millis();
@@ -300,13 +321,13 @@ unsigned long NetworkConnections::getTime()
     }
 
     // All attempts failed
-    Serial.println("ERROR: NTP synchronization failed after all retry attempts!");
-    Serial.println("Possible causes:");
-    Serial.println("  - No internet connection");
-    Serial.println("  - DNS resolution failure");
-    Serial.println("  - NTP servers unreachable");
-    Serial.println("  - Firewall blocking NTP traffic");
-    Serial.println("Device will continue with RTC time if available.");
+    SysLogs::logInfo("NETWORK", "ERROR: NTP synchronization failed after all retry attempts!");
+    SysLogs::logInfo("NETWORK", "Possible causes:");
+    SysLogs::logInfo("NETWORK", "  - No internet connection");
+    SysLogs::logInfo("NETWORK", "  - DNS resolution failure");
+    SysLogs::logInfo("NETWORK", "  - NTP servers unreachable");
+    SysLogs::logInfo("NETWORK", "  - Firewall blocking NTP traffic");
+    SysLogs::logInfo("NETWORK", "Device will continue with RTC time if available.");
 
     return 0; // Return 0 to indicate failure
 }
@@ -316,7 +337,7 @@ unsigned long NetworkConnections::getRTCTime()
     struct timeval tv;
     if (gettimeofday(&tv, NULL) != 0)
     {
-        Serial.println("ERROR: Failed to read time from RTC");
+        SysLogs::logInfo("NETWORK", "ERROR: Failed to read time from RTC");
         return 0; // Return 0 if RTC read fails
     }
 
@@ -325,13 +346,13 @@ unsigned long NetworkConnections::getRTCTime()
     const unsigned long MIN_VALID_RTC_TIME = 1704067200;
     if (tv.tv_sec < MIN_VALID_RTC_TIME)
     {
-        Serial.printf("WARNING: RTC time appears invalid (%lu - before 2024)\n", (unsigned long)tv.tv_sec);
-        Serial.println("This may indicate the RTC was never synchronized or has lost power");
+        SysLogs::logWarning("RTC time appears invalid (" + String((unsigned long)tv.tv_sec) + " - before 2024)");
+        SysLogs::logInfo("NETWORK", "This may indicate the RTC was never synchronized or has lost power");
         return 0;
     }
 
     // Log successful RTC read
-    // Serial.printf("RTC time read successfully: %lu (%s)", (unsigned long)tv.tv_sec, ctime(&tv.tv_sec));
+    // SysLogs::logInfo("NETWORK", "RTC time read successfully: %lu (%s)", (unsigned long)tv.tv_sec, ctime(&tv.tv_sec));
 
     return (unsigned long)tv.tv_sec;
 }
@@ -346,14 +367,14 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
 
     lastReconnectAttempt = millis();
 
-    Serial.println("[RECONNECT] Starting WiFi reconnection process...");
+    SysLogs::logInfo("NETWORK", "[RECONNECT] Starting WiFi reconnection process...");
 
     // If we have stored credentials, try to reconnect
     if (lastConnectedSSID.length() > 0 && lastConnectedPassword.length() > 0)
     {
         for (int attempt = 1; attempt <= maxRetries; attempt++)
         {
-            Serial.printf("[RECONNECT] Attempt %d/%d to reconnect to %s\n", attempt, maxRetries, lastConnectedSSID.c_str());
+            SysLogs::logInfo("RECONNECT", "Attempt " + String(attempt) + "/" + String(maxRetries) + " to reconnect to " + lastConnectedSSID);
 
             // Ensure WiFi is in station mode
             WiFi.mode(WIFI_STA);
@@ -361,7 +382,7 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
 
             if (connectToNetwork(lastConnectedSSID, lastConnectedPassword))
             {
-                Serial.println("[RECONNECT] Successfully reconnected!");
+                SysLogs::logInfo("NETWORK", "[RECONNECT] Successfully reconnected!");
                 return true;
             }
 
@@ -369,16 +390,16 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
             if (attempt < maxRetries)
             {
                 unsigned long delayTime = attempt * 2000; // 2s, 4s, 6s...
-                Serial.printf("[RECONNECT] Waiting %lu ms before next attempt\n", delayTime);
+                SysLogs::logInfo("NETWORK", "[RECONNECT] Waiting " + String(delayTime) + " ms before next attempt");
                 delay(delayTime);
             }
         }
 
-        Serial.println("[RECONNECT] All reconnection attempts failed");
+        SysLogs::logInfo("NETWORK", "[RECONNECT] All reconnection attempts failed");
     }
     else
     {
-        Serial.println("[RECONNECT] No stored credentials available");
+        SysLogs::logInfo("NETWORK", "[RECONNECT] No stored credentials available");
         // Try loading from NVS
         WiFiCredentials credentials = loadWiFiCredentials();
         if (credentials.valid)
@@ -392,29 +413,76 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
 
 void NetworkConnections::disconnectWiFi()
 {
-    Serial.println("[WIFI] Disconnecting WiFi for sleep...");
+    SysLogs::logInfo("NETWORK", "[WIFI] Disconnecting WiFi for sleep...");
     WiFi.disconnect(true); // true = turn off WiFi radio
     WiFi.mode(WIFI_OFF);
     delay(100);
-    Serial.println("[WIFI] WiFi disconnected and radio turned off");
+    SysLogs::logInfo("NETWORK", "[WIFI] WiFi disconnected and radio turned off");
+}
+
+bool NetworkConnections::hasNVSSettingChanged(const char *file, String keyName, uint32_t &newValue)
+{
+    bool changesMade = false;
+    preferences.begin(file, false); // Read-write mode
+
+    uint32_t currentValue = preferences.getUInt(keyName.c_str(), 0);
+    if (currentValue != newValue)
+    {
+        preferences.putUInt(keyName.c_str(), newValue);
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' updated to: " + String(newValue));
+        changesMade = true;
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' unchanged, no write needed");
+    }
+
+    preferences.end();
+    return changesMade;
+}
+
+bool NetworkConnections::hasBoolNVSSettingChanged(const char *file, String keyName, bool newValue)
+{
+    bool changesMade = false;
+    preferences.begin(file, false); // Read-write mode
+
+    bool currentValue = preferences.getBool(keyName.c_str(), false);
+    if (currentValue != newValue)
+    {
+        preferences.putBool(keyName.c_str(), newValue);
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' updated to: " + String(newValue ? "true" : "false"));
+        changesMade = true;
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' unchanged, no write needed");
+    }
+
+    preferences.end();
+    return changesMade;
 }
 
 void NetworkConnections::saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
 {
-    Serial.println("[NETWORK] Saving network configuration to NVS...");
-    preferences.begin("network", false); // Read-write mode
+    SysLogs::logInfo("NETWORK", "[NETWORK] Checking network configuration for changes...");
 
-    preferences.putUInt("ip", (uint32_t)ip);
-    preferences.putUInt("gateway", (uint32_t)gateway);
-    preferences.putUInt("subnet", (uint32_t)subnet);
-    preferences.putUInt("dns1", (uint32_t)dns1);
-    preferences.putUInt("dns2", (uint32_t)dns2);
-    preferences.putBool("hasConfig", true);
+    uint32_t currentIP = hasNVSSettingChanged("network", "ip", (uint32_t &)ip);
+    uint32_t currentGateway = hasNVSSettingChanged("network", "gateway", (uint32_t &)gateway);
+    uint32_t currentSubnet = hasNVSSettingChanged("network", "subnet", (uint32_t &)subnet);
+    uint32_t currentDNS1 = hasNVSSettingChanged("network", "dns1", (uint32_t &)dns1);
+    uint32_t currentDNS2 = hasNVSSettingChanged("network", "dns2", (uint32_t &)dns2);
+    bool hasConfig = hasBoolNVSSettingChanged("network", "hasConfig", true);
 
-    preferences.end();
     hasStoredNetworkConfig = true;
 
-    Serial.printf("[NETWORK] Saved IP: %s, Gateway: %s\n", ip.toString().c_str(), gateway.toString().c_str());
+    if (currentIP || currentGateway || currentSubnet || currentDNS1 || currentDNS2 || hasConfig)
+    {
+        SysLogs::logInfo("NETWORK", "Saved updated network config - IP: " + ip.toString() + ", Gateway: " + gateway.toString());
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", "Network configuration unchanged, no NVS write needed");
+    }
 }
 
 bool NetworkConnections::loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IPAddress &subnet, IPAddress &dns1, IPAddress &dns2)
@@ -439,12 +507,12 @@ bool NetworkConnections::loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IP
     // Validate that we have reasonable IP addresses
     if (ip[0] == 0 || gateway[0] == 0)
     {
-        Serial.println("[NETWORK] Stored network config is invalid");
+        SysLogs::logInfo("NETWORK", "[NETWORK] Stored network config is invalid");
         return false;
     }
 
     hasStoredNetworkConfig = true;
-    Serial.printf("[NETWORK] Loaded network config - IP: %s, Gateway: %s\n", ip.toString().c_str(), gateway.toString().c_str());
+    SysLogs::logInfo("NETWORK", "Loaded network config - IP: " + ip.toString() + ", Gateway: " + gateway.toString());
     return true;
 }
 
@@ -459,8 +527,8 @@ void NetworkConnections::setupAP(String idCode)
     apSSID = AP_SSID + idCode;
 
     // print the network name (SSID);
-    Serial.print("Creating access point named: ");
-    Serial.println(apSSID);
+    SysLogs::print("Creating access point named: ");
+    SysLogs::println(apSSID);
 
     WiFi.mode(WIFI_AP); // Set ESP32 to AP mode
 
@@ -475,7 +543,7 @@ void NetworkConnections::setupAP(String idCode)
 
     if (!status)
     {
-        Serial.println("Creating access point failed");
+        SysLogs::logInfo("NETWORK", "Creating access point failed");
         return;
     }
     apMode = true;
@@ -484,11 +552,11 @@ void NetworkConnections::setupAP(String idCode)
     server.begin();
     webServerStarted = true; // Mark web server as started
 
-    Serial.println("Access Point started successfully");
-    Serial.print("AP SSID: ");
-    Serial.println(apSSID);
-    Serial.print("AP IP Address: ");
-    Serial.println(WiFi.softAPIP());
+    SysLogs::logInfo("NETWORK", "Access Point started successfully");
+    SysLogs::print("AP SSID: ");
+    SysLogs::println(apSSID);
+    SysLogs::print("AP IP Address: ");
+    SysLogs::println(WiFi.softAPIP().toString());
 }
 
 void NetworkConnections::scanNetworks()
@@ -497,22 +565,22 @@ void NetworkConnections::scanNetworks()
     WiFi.disconnect();
     delay(100);
 
-    Serial.println("Scanning for WiFi networks...");
+    SysLogs::logInfo("NETWORK", "Scanning for WiFi networks...");
     esp_task_wdt_reset(); // Feed the watchdog in the loop
 
     int numNetworks = WiFi.scanNetworks();
 
-    Serial.print("Number of networks found: ");
-    Serial.println(numNetworks);
+    SysLogs::print("Number of networks found: ");
+    SysLogs::println(String(numNetworks));
 
     if (numNetworks <= 0)
     {
-        Serial.println("No networks found or scan failed.");
+        SysLogs::logInfo("NETWORK", "No networks found or scan failed.");
         availableNetworks = "<option value=''>No Networks Found</option>";
     }
     else
     {
-        Serial.println("Networks found:");
+        SysLogs::logInfo("NETWORK", "Networks found:");
         availableNetworks = ""; // Clear previous results
 
         for (int i = 0; i < numNetworks; i++)
@@ -525,15 +593,15 @@ void NetworkConnections::scanNetworks()
             availableNetworks += WiFi.SSID(i);
             availableNetworks += "</option>";
 
-            Serial.print(i + 1);
-            Serial.print(": ");
-            Serial.print(WiFi.SSID(i));
-            Serial.print(" (RSSI: ");
-            Serial.print(WiFi.RSSI(i));
-            Serial.print(" dBm) ");
-            Serial.print(" [");
-            Serial.print(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "Open" : "Secured");
-            Serial.println("]");
+            SysLogs::print(String(i + 1));
+            SysLogs::print(": ");
+            SysLogs::print(WiFi.SSID(i));
+            SysLogs::print(" (RSSI: ");
+            SysLogs::print(String(WiFi.RSSI(i)));
+            SysLogs::print(" dBm) ");
+            SysLogs::print(" [");
+            SysLogs::print(WiFi.encryptionType(i) == WIFI_AUTH_OPEN ? "Open" : "Secured");
+            SysLogs::logInfo("NETWORK", "]");
             delay(10);
         }
     }
@@ -544,7 +612,7 @@ void NetworkConnections::handleClientRequests()
     WiFiClient client = server.available();
     if (client)
     {
-        Serial.println("New Client Connected!");
+        SysLogs::logInfo("NETWORK", "New Client Connected!");
         String request = "";
         unsigned long timeout = millis() + 5000; // 5-second timeout
 
@@ -558,8 +626,8 @@ void NetworkConnections::handleClientRequests()
             }
         }
 
-        Serial.println("Full HTTP Request:");
-        Serial.println(request);
+        SysLogs::logInfo("NETWORK", "Full HTTP Request:");
+        SysLogs::println(request);
 
         if (request.indexOf("GET /") >= 0)
         {
@@ -572,7 +640,7 @@ void NetworkConnections::handleClientRequests()
 
         delay(100);
         client.stop();
-        Serial.println("Client Disconnected.");
+        SysLogs::logInfo("NETWORK", "Client Disconnected.");
     }
 }
 
@@ -634,20 +702,20 @@ void NetworkConnections::sendWiFiConfigPage(WiFiClient &client)
 
 void NetworkConnections::processWiFiConfig(WiFiClient &client, String request)
 {
-    Serial.println("Received Wi-Fi Configuration Request:");
-    Serial.println(request); // Log the full request
+    SysLogs::logInfo("NETWORK", "Received Wi-Fi Configuration Request:");
+    SysLogs::println(request); // Log the full request
 
     // **Step 1: Extract the POST body correctly**
     int bodyIndex = request.indexOf("\r\n\r\n"); // Find where headers end
     if (bodyIndex == -1)
     {
-        Serial.println("Error: Could not locate POST body.");
+        SysLogs::logInfo("NETWORK", "Error: Could not locate POST body.");
         return;
     }
     request = request.substring(bodyIndex + 4); // The actual POST data
 
-    Serial.println("Extracted POST Body:");
-    Serial.println(request); // Should now show 'ssid=MySSID&password=MyPass'
+    SysLogs::logInfo("NETWORK", "Extracted POST Body:");
+    SysLogs::println(request); // Should now show 'ssid=MySSID&password=MyPass'
 
     String ssid = "";
     String password = "";
@@ -701,10 +769,10 @@ void NetworkConnections::processWiFiConfig(WiFiClient &client, String request)
         password = urlDecode(password);
     }
 
-    Serial.print("Extracted SSID: ");
-    Serial.println(ssid);
-    Serial.print("Extracted Password: ");
-    Serial.println(password);
+    SysLogs::print("Extracted SSID: ");
+    SysLogs::println(ssid);
+    SysLogs::print("Extracted Password: ");
+    SysLogs::println(password);
 
     // **Step 4: Validate and Save**
     if (ssid.length() > 0 && password.length() > 0)
@@ -764,17 +832,17 @@ void NetworkConnections::saveWiFiCredentials(String ssid, String password)
 {
 
     // Save to NVS
-    Serial.println("Saving Wi-Fi credentials to NVS...");
+    SysLogs::logInfo("NETWORK", "Saving Wi-Fi credentials to NVS...");
     preferences.begin("wifi", false); // Read-write mode
     preferences.putString("ssid", ssid);
     preferences.putString("password", password);
     preferences.end();
-    Serial.println("Wi-Fi credentials successfully saved to NVS.");
+    SysLogs::logInfo("NETWORK", "Wi-Fi credentials successfully saved to NVS.");
 }
 
 void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
 {
-    Serial.println("Saving device settings to NVS...");
+    SysLogs::logInfo("NETWORK", "Saving device settings to NVS...");
     preferences.begin("device", false); // Read-write mode
     preferences.putULong64("sleepDur", settings.sleepDuration);
     preferences.putULong("sensorInt", settings.sensorReadInterval);
@@ -787,57 +855,57 @@ void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
     preferences.putULong("httpPubInt", settings.httpPublishInterval);
 
     preferences.end();
-    Serial.println("Device settings successfully saved to NVS.");
+    SysLogs::logInfo("NETWORK", "Device settings successfully saved to NVS.");
 }
 
 // Helper functions for NVS key checking with different data types
-uint64_t NetworkConnections::checkNVSKeyULong64(const char* keyName, uint64_t defaultValue, const char* settingName)
+uint64_t NetworkConnections::checkNVSKeyULong64(const char *keyName, uint64_t defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
         preferences.putULong64(keyName, defaultValue);
-        Serial.print("Created default ");
-        Serial.print(settingName);
-        Serial.println(" setting");
+        SysLogs::print("Created default ");
+        SysLogs::print(settingName);
+        SysLogs::logInfo("NETWORK", " setting");
         return defaultValue;
     }
     return preferences.getULong64(keyName, defaultValue);
 }
 
-unsigned long NetworkConnections::checkNVSKeyULong(const char* keyName, unsigned long defaultValue, const char* settingName)
+unsigned long NetworkConnections::checkNVSKeyULong(const char *keyName, unsigned long defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
         preferences.putULong(keyName, defaultValue);
-        Serial.print("Created default ");
-        Serial.print(settingName);
-        Serial.println(" setting");
+        SysLogs::print("Created default ");
+        SysLogs::print(settingName);
+        SysLogs::logInfo("NETWORK", " setting");
         return defaultValue;
     }
     return preferences.getULong(keyName, defaultValue);
 }
 
-String NetworkConnections::checkNVSKeyString(const char* keyName, const String& defaultValue, const char* settingName)
+String NetworkConnections::checkNVSKeyString(const char *keyName, const String &defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
         preferences.putString(keyName, defaultValue);
-        Serial.print("Created default ");
-        Serial.print(settingName);
-        Serial.println(" setting");
+        SysLogs::print("Created default ");
+        SysLogs::print(settingName);
+        SysLogs::logInfo("NETWORK", " setting");
         return defaultValue;
     }
     return preferences.getString(keyName, defaultValue);
 }
 
-bool NetworkConnections::checkNVSKeyBool(const char* keyName, bool defaultValue, const char* settingName)
+bool NetworkConnections::checkNVSKeyBool(const char *keyName, bool defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
         preferences.putBool(keyName, defaultValue);
-        Serial.print("Created default ");
-        Serial.print(settingName);
-        Serial.println(" setting");
+        SysLogs::print("Created default ");
+        SysLogs::print(settingName);
+        SysLogs::logInfo("NETWORK", " setting");
         return defaultValue;
     }
     return preferences.getBool(keyName, defaultValue);
@@ -846,7 +914,7 @@ bool NetworkConnections::checkNVSKeyBool(const char* keyName, bool defaultValue,
 DeviceSettings NetworkConnections::loadDeviceSettings()
 {
     DeviceSettings settings;
-    Serial.println("Loading device settings from NVS storage...");
+    SysLogs::logInfo("NETWORK", "Loading device settings from NVS storage...");
     preferences.begin("device", false); // Read-write mode to allow saving defaults
 
     // Load each setting using helper functions - they handle defaults automatically
@@ -864,26 +932,26 @@ DeviceSettings NetworkConnections::loadDeviceSettings()
 
     // Settings are always valid since helper functions ensure they exist
     settings.valid = true;
-    Serial.println("Device settings loaded successfully from NVS.");
+    SysLogs::logInfo("NETWORK", "Device settings loaded successfully from NVS.");
 
     // Display loaded settings
-    Serial.print("Sleep Duration: ");
-    Serial.print(settings.sleepDuration / 1000000ULL);
-    Serial.println(" seconds");
-    Serial.print("Sensor Read Interval: ");
-    Serial.print(settings.sensorReadInterval / 1000);
-    Serial.println(" seconds");
-    Serial.print("Stabilization Time: ");
-    Serial.print(settings.sensorStabilizationTime / 1000);
-    Serial.println(" seconds");
-    Serial.print("Device ID: ");
-    Serial.println(settings.deviceID);
-    Serial.print("ID Code: ");
-    Serial.println(settings.idCode);
-    Serial.print("NTP Retry Enabled: ");
-    Serial.println(settings.ntpRetryEnabled ? "Yes" : "No");
-    Serial.print("HTTP Publish Enabled: ");
-    Serial.println(settings.httpPublishEnabled ? "Yes" : "No");
+    SysLogs::print("Sleep Duration: ");
+    SysLogs::print(String(settings.sleepDuration / 1000000ULL));
+    SysLogs::logInfo("NETWORK", " seconds");
+    SysLogs::print("Sensor Read Interval: ");
+    SysLogs::print(String(settings.sensorReadInterval / 1000));
+    SysLogs::logInfo("NETWORK", " seconds");
+    SysLogs::print("Stabilization Time: ");
+    SysLogs::print(String(settings.sensorStabilizationTime / 1000));
+    SysLogs::logInfo("NETWORK", " seconds");
+    SysLogs::print("Device ID: ");
+    SysLogs::println(settings.deviceID);
+    SysLogs::print("ID Code: ");
+    SysLogs::println(settings.idCode);
+    SysLogs::print("NTP Retry Enabled: ");
+    SysLogs::println(settings.ntpRetryEnabled ? "Yes" : "No");
+    SysLogs::print("HTTP Publish Enabled: ");
+    SysLogs::println(settings.httpPublishEnabled ? "Yes" : "No");
 
     return settings;
 }
@@ -936,18 +1004,17 @@ bool NetworkConnections::isConnected()
 // Add this helper function to keep the code DRY
 void NetworkConnections::printNetworkInfo()
 {
-    Serial.println("---------------Network Info-------------");
-    Serial.print("SSID: ");
-    Serial.println(WiFi.SSID());
+    SysLogs::logInfo("NETWORK", "---------------Network Info-------------");
+    SysLogs::print("SSID: ");
+    SysLogs::println(WiFi.SSID());
 
     IPAddress ip = WiFi.localIP();
-    Serial.print("IP Address: ");
-    Serial.println(ip);
+    SysLogs::print("IP Address: ");
+    SysLogs::println(ip.toString());
 
-    Serial.print("Signal Strength (RSSI): ");
-    Serial.print(WiFi.RSSI());
-    Serial.println(" dBm");
-    Serial.println("----------------------------------------");
+    SysLogs::print("Signal Strength (RSSI): ");
+    SysLogs::println(String(WiFi.RSSI()) + " dBm");
+    SysLogs::logInfo("NETWORK", "----------------------------------------");
 }
 
 //------------------------------------------------------------------------------
@@ -959,7 +1026,7 @@ void NetworkConnections::handleClientRequestsWithSensorData(const LatestReadings
     WiFiClient client = server.available();
     if (client)
     {
-        Serial.println("New Client Connected!");
+        SysLogs::logInfo("NETWORK", "New Client Connected!");
         String request = "";
         unsigned long timeout = millis() + 5000; // 5-second timeout
 
@@ -980,8 +1047,8 @@ void NetworkConnections::handleClientRequestsWithSensorData(const LatestReadings
             delay(1);
         }
 
-        Serial.println("Full HTTP Request:");
-        Serial.println(request); // Handle different routes
+        SysLogs::logInfo("NETWORK", "Full HTTP Request:");
+        SysLogs::println(request); // Handle different routes
 
         if (request.indexOf("GET / HTTP") >= 0 || request.indexOf("GET /index") >= 0)
         {
@@ -1026,7 +1093,7 @@ void NetworkConnections::handleClientRequestsWithSensorData(const LatestReadings
 
         delay(100);
         client.stop();
-        Serial.println("Client Disconnected.");
+        SysLogs::logInfo("NETWORK", "Client Disconnected.");
     }
 }
 
@@ -1457,20 +1524,20 @@ void NetworkConnections::sendAdvancedConfigPage(WiFiClient &client, const Device
 
 void NetworkConnections::processAdvancedConfig(WiFiClient &client, String request)
 {
-    Serial.println("Received Advanced Configuration Request:");
-    Serial.println(request);
+    SysLogs::logInfo("NETWORK", "Received Advanced Configuration Request:");
+    SysLogs::println(request);
 
     // Extract the POST body
     int bodyIndex = request.indexOf("\r\n\r\n");
     if (bodyIndex == -1)
     {
-        Serial.println("Error: Could not locate POST body.");
+        SysLogs::logInfo("NETWORK", "Error: Could not locate POST body.");
         return;
     }
     request = request.substring(bodyIndex + 4);
 
-    Serial.println("Extracted POST Body:");
-    Serial.println(request);
+    SysLogs::logInfo("NETWORK", "Extracted POST Body:");
+    SysLogs::println(request);
 
     DeviceSettings newSettings;
 
@@ -1532,20 +1599,20 @@ void NetworkConnections::processAdvancedConfig(WiFiClient &client, String reques
         newSettings.idCode.replace("+", " ");
     }
 
-    Serial.println("Parsed Settings:");
-    Serial.print("Sleep Duration: ");
-    Serial.print(newSettings.sleepDuration / 1000000ULL);
-    Serial.println(" seconds");
-    Serial.print("Sensor Interval: ");
-    Serial.print(newSettings.sensorReadInterval / 1000);
-    Serial.println(" seconds");
-    Serial.print("Stabilization Time: ");
-    Serial.print(newSettings.sensorStabilizationTime / 1000);
-    Serial.println(" seconds");
-    Serial.print("Device ID: ");
-    Serial.println(newSettings.deviceID);
-    Serial.print("ID Code: ");
-    Serial.println(newSettings.idCode);
+    SysLogs::logInfo("NETWORK", "Parsed Settings:");
+    SysLogs::print("Sleep Duration: ");
+    SysLogs::print(String(newSettings.sleepDuration / 1000000ULL));
+    SysLogs::logInfo("NETWORK", " seconds");
+    SysLogs::print("Sensor Interval: ");
+    SysLogs::print(String(newSettings.sensorReadInterval / 1000));
+    SysLogs::logInfo("NETWORK", " seconds");
+    SysLogs::print("Stabilization Time: ");
+    SysLogs::print(String(newSettings.sensorStabilizationTime / 1000));
+    SysLogs::logInfo("NETWORK", " seconds");
+    SysLogs::print("Device ID: ");
+    SysLogs::println(newSettings.deviceID);
+    SysLogs::print("ID Code: ");
+    SysLogs::println(newSettings.idCode);
 
     // Validate settings
     bool isValid = (newSettings.sleepDuration >= 5000000ULL && newSettings.sleepDuration <= 3600000000ULL) &&
@@ -1613,7 +1680,7 @@ bool NetworkConnections::retryNTPSync()
     // Check if we're connected to WiFi
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("Cannot retry NTP sync - not connected to WiFi");
+        SysLogs::logInfo("NETWORK", "Cannot retry NTP sync - not connected to WiFi");
         return false;
     }
 
@@ -1623,11 +1690,11 @@ bool NetworkConnections::retryNTPSync()
     {
         // If RTC is already current (e.g., sync was recent), don't retry immediately
         // This prevents excessive NTP requests
-        Serial.println("RTC time appears current, skipping NTP retry");
+        SysLogs::logInfo("NETWORK", "RTC time appears current, skipping NTP retry");
         return true; // Consider this success since we have valid time
     }
 
-    Serial.println("Attempting periodic NTP synchronization retry...");
+    SysLogs::logInfo("NETWORK", "Attempting periodic NTP synchronization retry...");
 
     // Use a simpler, faster approach for retry attempts
     const char *quickServer = "pool.ntp.org";
@@ -1638,22 +1705,22 @@ bool NetworkConnections::retryNTPSync()
     unsigned long startTime = millis();
     struct tm timeinfo;
 
-    Serial.print("Quick NTP sync");
+    SysLogs::print("Quick NTP sync");
     while ((millis() - startTime < QUICK_TIMEOUT))
     {
         if (getLocalTime(&timeinfo))
         {
-            Serial.println();
-            Serial.println("Periodic NTP sync successful!");
+            SysLogs::println();
+            SysLogs::logInfo("NETWORK", "Periodic NTP sync successful!");
             return true;
         }
-        Serial.print(".");
+        SysLogs::print(".");
         delay(500);
         esp_task_wdt_reset();
     }
 
-    Serial.println();
-    Serial.println("Periodic NTP sync failed - will try again later");
+    SysLogs::println();
+    SysLogs::logInfo("NETWORK", "Periodic NTP sync failed - will try again later");
     return false;
 }
 
@@ -1665,7 +1732,7 @@ bool NetworkConnections::testServerConnection(const String &device_id)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("[HTTP] Cannot test server connection - not connected to WiFi");
+        SysLogs::logInfo("NETWORK", "[HTTP] Cannot test server connection - not connected to WiFi");
         return false;
     }
 
@@ -1676,8 +1743,8 @@ bool NetworkConnections::testServerConnection(const String &device_id)
     String queryString = "?deviceID=" + device_id;
     String url = "http://" + String(server.address) + ":" + String(server.port) + server.test + queryString;
 
-    Serial.printf("[HTTP] Testing server connection to: %s\n", url.c_str());
-    Serial.printf("[HTTP] Device ID for test: %s\n", device_id.c_str());
+    SysLogs::logInfo("HTTP", "Testing server connection to: " + url);
+    SysLogs::logInfo("HTTP", "Device ID for test: " + device_id);
 
     http.begin(url);
     http.setTimeout(10000); // 10 second timeout
@@ -1686,15 +1753,15 @@ bool NetworkConnections::testServerConnection(const String &device_id)
 
     if (httpResponseCode > 0)
     {
-        Serial.printf("[HTTP] Server ping successful: %d\n", httpResponseCode);
+        SysLogs::logInfo("NETWORK", "[HTTP] Server ping successful: " + String(httpResponseCode) + "");
         String response = http.getString();
-        Serial.printf("[HTTP] Server response: %s\n", response.c_str());
+        SysLogs::logDebug("HTTP", "Server response: " + response);
         http.end();
         return httpResponseCode == 200;
     }
     else
     {
-        Serial.printf("[HTTP] Server ping failed with error: %d\n", httpResponseCode);
+        SysLogs::logInfo("NETWORK", "[HTTP] Server ping failed with error: " + String(httpResponseCode) + "");
         http.end();
         return false;
     }
@@ -1704,7 +1771,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("[HTTP] Cannot send data - not connected to WiFi");
+        SysLogs::logInfo("NETWORK", "[HTTP] Cannot send data - not connected to WiFi");
         return false;
     }
 
@@ -1713,7 +1780,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
 
     String url = "http://" + String(server.address) + ":" + String(server.port) + server.apiPostRoute;
 
-    Serial.printf("[HTTP] Sending sensor data to: %s\n", url.c_str());
+    SysLogs::logInfo("HTTP", "Sending sensor data to: " + url);
 
     // Create JSON payload using ArduinoJson v7 syntax
     JsonDocument doc;
@@ -1734,7 +1801,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
     String jsonString;
     serializeJson(doc, jsonString);
 
-    Serial.printf("[HTTP] JSON payload: %s\n", jsonString.c_str());
+    SysLogs::logDebug("HTTP", "JSON payload: " + jsonString);
 
     // Configure HTTP request
     http.begin(url);
@@ -1748,15 +1815,15 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
     if (httpResponseCode > 0)
     {
         String response = http.getString();
-        Serial.printf("[HTTP] Response code: %d\n", httpResponseCode);
-        Serial.printf("[HTTP] Response: %s\n", response.c_str());
+        SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode) + "");
+        SysLogs::logDebug("HTTP", "Response: " + response);
 
         http.end();
         return httpResponseCode >= 200 && httpResponseCode < 300; // Accept 2xx responses
     }
     else
     {
-        Serial.printf("[HTTP] Request failed with error: %d\n", httpResponseCode);
+        SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode) + "");
         http.end();
         return false;
     }
@@ -1766,16 +1833,16 @@ bool NetworkConnections::publishSensorData(const SensorDataManager &dataManager,
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        Serial.println("[HTTP] Cannot publish data - not connected to WiFi");
+        SysLogs::logInfo("NETWORK", "[HTTP] Cannot publish data - not connected to WiFi");
         return false;
     }
 
-    Serial.println("[HTTP] Starting sensor data publication...");
+    SysLogs::logInfo("NETWORK", "[HTTP] Starting sensor data publication...");
 
     // Test server connection first
     if (!testServerConnection(deviceID))
     {
-        Serial.println("[HTTP] Server connection test failed - aborting publication");
+        SysLogs::logInfo("NETWORK", "[HTTP] Server connection test failed - aborting publication");
         return false;
     }
     // Get all sensor data
@@ -1783,11 +1850,11 @@ bool NetworkConnections::publishSensorData(const SensorDataManager &dataManager,
 
     if (allData.empty())
     {
-        Serial.println("[HTTP] No sensor data to publish");
+        SysLogs::logInfo("NETWORK", "[HTTP] No sensor data to publish");
         return true; // Not an error, just nothing to send
     }
 
-    Serial.printf("[HTTP] Publishing %d sensor data items...\n", allData.size());
+    SysLogs::logInfo("HTTP", "Publishing " + String(allData.size()) + " sensor data items...");
 
     int successCount = 0;
     int totalCount = allData.size();
@@ -1795,16 +1862,16 @@ bool NetworkConnections::publishSensorData(const SensorDataManager &dataManager,
     // Send each sensor data item separately
     for (const auto &data : allData)
     {
-        Serial.printf("[HTTP] Sending data for sensor: %s\n", data.sensorID.c_str());
+        SysLogs::logDebug("HTTP", "Sending data for sensor: " + data.sensorID);
 
         if (sendSensorDataHTTP(data, deviceID))
         {
             successCount++;
-            Serial.printf("[HTTP] Successfully sent data for sensor: %s\n", data.sensorID.c_str());
+            SysLogs::logSuccess("HTTP", "Successfully sent data for sensor: " + data.sensorID);
         }
         else
         {
-            Serial.printf("[HTTP] Failed to send data for sensor: %s\n", data.sensorID.c_str());
+            SysLogs::logError("Failed to send data for sensor: " + data.sensorID);
         }
 
         // Small delay between requests to avoid overwhelming the server
@@ -1814,7 +1881,7 @@ bool NetworkConnections::publishSensorData(const SensorDataManager &dataManager,
         esp_task_wdt_reset();
     }
 
-    Serial.printf("[HTTP] Publication complete: %d/%d successful\n", successCount, totalCount);
+    SysLogs::logInfo("NETWORK", "[HTTP] Publication complete: " + String(successCount) + "/" + String(totalCount) + " successful");
 
     // Return true if at least some data was sent successfully
     return successCount > 0;
