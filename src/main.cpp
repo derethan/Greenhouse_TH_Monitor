@@ -35,8 +35,12 @@
 #include "state.h"
 #include "base/deviceConfig.h"
 #include "base/sysLogs.h"
+#include "base/serialConfig.h"
 
 #include "tempHumDeviceConfig.h"
+
+// Runtime DEBUG_MODE variable (replaces compile-time constant)
+bool DEBUG_MODE = true;
 
 /**
  * @brief Global system state object
@@ -438,6 +442,12 @@ void loop()
 {
   unsigned long currentMillis = millis();
 
+  // Check for serial access password in any mode except SERIAL_MODE
+  if (state.currentMode != SystemMode::SERIAL_MODE && SerialConfig::checkForSerialAccess())
+  {
+    state.currentMode = SystemMode::SERIAL_MODE;
+  }
+
   switch (state.currentMode)
   {
   case SystemMode::INITIALIZING:
@@ -617,11 +627,11 @@ void loop()
 
   case SystemMode::SERIAL_MODE:
   {
-    // Future implementation for Serial Mode
-    // This mode is for user override for config via Serial. It will disable any existing debug statements.
-    // This mode will remain until a user exits.
-    // A menu will be presented to the user for configuration options.
-    // For now, just break
+    // Serial configuration mode for user interaction
+    // This mode disables debug logging and presents an interactive menu
+    // for device configuration, diagnostics, and system management
+    SerialConfig::enterSerialMode(state, network, dhtSensor, latestReadings);
+    // Mode will be restored to previous state by enterSerialMode()
     break;
   }
   }
