@@ -52,7 +52,7 @@ private:
     String apSSID;
     Preferences preferences;
     bool webServerStarted = false; // Track if web server is running
-    
+
     // Network state tracking
     String lastConnectedSSID = "";
     String lastConnectedPassword = "";
@@ -73,14 +73,14 @@ private:
     void sendAdvancedConfigPage(WiFiClient &client, const DeviceSettings &settings);
     void processAdvancedConfig(WiFiClient &client, String request);
 
-    void checkNVSKey(String keyName);
-    
     // Helper functions for NVS key checking with different data types
-    uint64_t checkNVSKeyULong64(const char* keyName, uint64_t defaultValue, const char* settingName);
-    unsigned long checkNVSKeyULong(const char* keyName, unsigned long defaultValue, const char* settingName);
-    String checkNVSKeyString(const char* keyName, const String& defaultValue, const char* settingName);
-    bool checkNVSKeyBool(const char* keyName, bool defaultValue, const char* settingName);
-    
+    uint64_t checkNVSKeyULong64(const char *keyName, uint64_t defaultValue, const char *settingName);
+    unsigned long checkNVSKeyULong(const char *keyName, unsigned long defaultValue, const char *settingName);
+    String checkNVSKeyString(const char *keyName, const String &defaultValue, const char *settingName);
+    bool checkNVSKeyBool(const char *keyName, bool defaultValue, const char *settingName);
+    bool hasNVSSettingChanged(const char *file, String keyName, uint32_t &newValue);
+    bool hasBoolNVSSettingChanged(const char *file, String keyName, bool newValue);
+
     String formatTimestamp(unsigned long timestamp);
     String getStatusText(int status);
     String getStatusColor(int status);
@@ -93,7 +93,7 @@ public:
     void setupWiFi(WiFiCredentials credentials, String idCode, bool apON); // Modified to accept credentials
     bool connectToNetwork(String ssid, String password);
     bool reconnectToNetwork(int maxRetries = 3); // New reconnection method with retries
-    void disconnectWiFi(); // New method to properly disconnect WiFi before sleep
+    void disconnectWiFi();                       // New method to properly disconnect WiFi before sleep
     void saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2);
     bool loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IPAddress &subnet, IPAddress &dns1, IPAddress &dns2);
     void startWebServer(); // New function to start web server in station mode

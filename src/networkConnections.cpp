@@ -1,7 +1,7 @@
 /**
  * @file networkConnections.cpp
  * @brief Network connection management for WiFi, NTP, HTTP, and device configuration
- * 
+ *
  * Handles all network-related functionality including:
  * - WiFi station and access point modes
  * - NTP time synchronization with RTC fallback
@@ -38,7 +38,7 @@ Preferences preferences;
  * @param credentials WiFi credentials structure containing SSID and password
  * @param idCode Unique device identifier code for AP name
  * @param apOn If true, run in dual mode (AP + Station), otherwise station only
- * 
+ *
  * Configures WiFi mode based on parameters. In dual mode, both AP and station
  * are active. In station-only mode, falls back to AP if connection fails.
  */
@@ -99,7 +99,7 @@ void NetworkConnections::setupWiFi(WiFiCredentials credentials, String idCode, b
 /**
  * @brief Load WiFi credentials from NVS (Non-Volatile Storage)
  * @return WiFiCredentials structure containing SSID, password, and validity flag
- * 
+ *
  * Attempts to load WiFi credentials from ESP32's NVS storage. Returns a structure
  * with the valid flag set to false if credentials are missing or empty.
  */
@@ -390,7 +390,7 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
             if (attempt < maxRetries)
             {
                 unsigned long delayTime = attempt * 2000; // 2s, 4s, 6s...
-            SysLogs::logInfo("NETWORK", "[RECONNECT] Waiting " + String(delayTime) + " ms before next attempt");
+                SysLogs::logInfo("NETWORK", "[RECONNECT] Waiting " + String(delayTime) + " ms before next attempt");
                 delay(delayTime);
             }
         }
@@ -420,22 +420,69 @@ void NetworkConnections::disconnectWiFi()
     SysLogs::logInfo("NETWORK", "[WIFI] WiFi disconnected and radio turned off");
 }
 
-void NetworkConnections::saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
+bool NetworkConnections::hasNVSSettingChanged(const char *file, String keyName, uint32_t &newValue)
 {
-    SysLogs::logInfo("NETWORK", "[NETWORK] Saving network configuration to NVS...");
-    preferences.begin("network", false); // Read-write mode
+    bool changesMade = false;
+    preferences.begin(file, false); // Read-write mode
 
-    preferences.putUInt("ip", (uint32_t)ip);
-    preferences.putUInt("gateway", (uint32_t)gateway);
-    preferences.putUInt("subnet", (uint32_t)subnet);
-    preferences.putUInt("dns1", (uint32_t)dns1);
-    preferences.putUInt("dns2", (uint32_t)dns2);
-    preferences.putBool("hasConfig", true);
+    uint32_t currentValue = preferences.getUInt(keyName.c_str(), 0);
+    if (currentValue != newValue)
+    {
+        preferences.putUInt(keyName.c_str(), newValue);
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' updated to: " + String(newValue));
+        changesMade = true;
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' unchanged, no write needed");
+    }
 
     preferences.end();
+    return changesMade;
+}
+
+bool NetworkConnections::hasBoolNVSSettingChanged(const char *file, String keyName, bool newValue)
+{
+    bool changesMade = false;
+    preferences.begin(file, false); // Read-write mode
+
+    bool currentValue = preferences.getBool(keyName.c_str(), false);
+    if (currentValue != newValue)
+    {
+        preferences.putBool(keyName.c_str(), newValue);
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' updated to: " + String(newValue ? "true" : "false"));
+        changesMade = true;
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", "[NETWORK] NVS key '" + keyName + "' unchanged, no write needed");
+    }
+
+    preferences.end();
+    return changesMade;
+}
+
+void NetworkConnections::saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAddress subnet, IPAddress dns1, IPAddress dns2)
+{
+    SysLogs::logInfo("NETWORK", "[NETWORK] Checking network configuration for changes...");
+
+    uint32_t currentIP = hasNVSSettingChanged("network", "ip", (uint32_t &)ip);
+    uint32_t currentGateway = hasNVSSettingChanged("network", "gateway", (uint32_t &)gateway);
+    uint32_t currentSubnet = hasNVSSettingChanged("network", "subnet", (uint32_t &)subnet);
+    uint32_t currentDNS1 = hasNVSSettingChanged("network", "dns1", (uint32_t &)dns1);
+    uint32_t currentDNS2 = hasNVSSettingChanged("network", "dns2", (uint32_t &)dns2);
+    bool hasConfig = hasBoolNVSSettingChanged("network", "hasConfig", true);
+
     hasStoredNetworkConfig = true;
 
-    SysLogs::logInfo("NETWORK", "Saved IP: " + ip.toString() + ", Gateway: " + gateway.toString());
+    if (currentIP || currentGateway || currentSubnet || currentDNS1 || currentDNS2 || hasConfig)
+    {
+        SysLogs::logInfo("NETWORK", "Saved updated network config - IP: " + ip.toString() + ", Gateway: " + gateway.toString());
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", "Network configuration unchanged, no NVS write needed");
+    }
 }
 
 bool NetworkConnections::loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IPAddress &subnet, IPAddress &dns1, IPAddress &dns2)
@@ -812,7 +859,7 @@ void NetworkConnections::saveDeviceSettings(const DeviceSettings &settings)
 }
 
 // Helper functions for NVS key checking with different data types
-uint64_t NetworkConnections::checkNVSKeyULong64(const char* keyName, uint64_t defaultValue, const char* settingName)
+uint64_t NetworkConnections::checkNVSKeyULong64(const char *keyName, uint64_t defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
@@ -825,7 +872,7 @@ uint64_t NetworkConnections::checkNVSKeyULong64(const char* keyName, uint64_t de
     return preferences.getULong64(keyName, defaultValue);
 }
 
-unsigned long NetworkConnections::checkNVSKeyULong(const char* keyName, unsigned long defaultValue, const char* settingName)
+unsigned long NetworkConnections::checkNVSKeyULong(const char *keyName, unsigned long defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
@@ -838,7 +885,7 @@ unsigned long NetworkConnections::checkNVSKeyULong(const char* keyName, unsigned
     return preferences.getULong(keyName, defaultValue);
 }
 
-String NetworkConnections::checkNVSKeyString(const char* keyName, const String& defaultValue, const char* settingName)
+String NetworkConnections::checkNVSKeyString(const char *keyName, const String &defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
@@ -851,7 +898,7 @@ String NetworkConnections::checkNVSKeyString(const char* keyName, const String& 
     return preferences.getString(keyName, defaultValue);
 }
 
-bool NetworkConnections::checkNVSKeyBool(const char* keyName, bool defaultValue, const char* settingName)
+bool NetworkConnections::checkNVSKeyBool(const char *keyName, bool defaultValue, const char *settingName)
 {
     if (!preferences.isKey(keyName))
     {
@@ -1706,7 +1753,7 @@ bool NetworkConnections::testServerConnection(const String &device_id)
 
     if (httpResponseCode > 0)
     {
-            SysLogs::logInfo("NETWORK", "[HTTP] Server ping successful: " + String(httpResponseCode) + "");
+        SysLogs::logInfo("NETWORK", "[HTTP] Server ping successful: " + String(httpResponseCode) + "");
         String response = http.getString();
         SysLogs::logDebug("HTTP", "Server response: " + response);
         http.end();
@@ -1714,7 +1761,7 @@ bool NetworkConnections::testServerConnection(const String &device_id)
     }
     else
     {
-            SysLogs::logInfo("NETWORK", "[HTTP] Server ping failed with error: " + String(httpResponseCode) + "");
+        SysLogs::logInfo("NETWORK", "[HTTP] Server ping failed with error: " + String(httpResponseCode) + "");
         http.end();
         return false;
     }
@@ -1768,7 +1815,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
     if (httpResponseCode > 0)
     {
         String response = http.getString();
-            SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode) + "");
+        SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode) + "");
         SysLogs::logDebug("HTTP", "Response: " + response);
 
         http.end();
@@ -1776,7 +1823,7 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
     }
     else
     {
-            SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode) + "");
+        SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode) + "");
         http.end();
         return false;
     }

@@ -173,16 +173,14 @@ bool readSensorData(bool discardReading)
     state.sensorError = true;
     return false;
   }
-  else
-  {
-    state.sensorError = false;
-    return true;
-  }
 
   sensorDataManager.printAllSensorData();
 
   SysLogs::printSectionHeader("Data Collection Complete");
   SysLogs::println();
+
+  state.sensorError = false;
+  return true;
 }
 
 /**
