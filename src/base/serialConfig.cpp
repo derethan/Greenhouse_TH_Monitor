@@ -395,11 +395,8 @@ namespace SerialConfig
                 if (input.length() > 0)
                 {
                     unsigned long newValue = input.toInt() * 1000;
-                    if (newValue >= 0)
-                    {
-                        state.SENSOR_STABILIZATION_TIME = newValue;
-                        Serial.println("Updated successfully!");
-                    }
+                    state.SENSOR_STABILIZATION_TIME = newValue;
+                    Serial.println("Updated successfully!");
                 }
                 break;
                 
@@ -408,10 +405,10 @@ namespace SerialConfig
                 input = readSerialInput();
                 if (input.length() > 0)
                 {
-                    uint64_t newValue = input.toInt() * 1000000ULL;
-                    if (newValue >= 1000000ULL)
+                    long seconds = input.toInt();
+                    if (seconds >= 1)
                     {
-                        state.SLEEP_DURATION = newValue;
+                        state.SLEEP_DURATION = (uint64_t)seconds * 1000000ULL;
                         Serial.println("Updated successfully!");
                     }
                     else
@@ -478,20 +475,20 @@ namespace SerialConfig
                 break;
                 
             case 2:
+            {
+                WiFiCredentials creds = network.loadWiFiCredentials();
+                if (creds.valid)
                 {
-                    WiFiCredentials creds = network.loadWiFiCredentials();
-                    if (creds.valid)
-                    {
-                        Serial.print("SSID: ");
-                        Serial.println(creds.ssid);
-                        Serial.println("Password: ********");
-                    }
-                    else
-                    {
-                        Serial.println("No stored credentials found");
-                    }
+                    Serial.print("SSID: ");
+                    Serial.println(creds.ssid);
+                    Serial.println("Password: ********");
+                }
+                else
+                {
+                    Serial.println("No stored credentials found");
                 }
                 break;
+            }
                 
             case 3:
                 Serial.println("WiFi credential update must be done through web interface");

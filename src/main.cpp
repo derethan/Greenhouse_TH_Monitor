@@ -443,6 +443,7 @@ void loop()
   unsigned long currentMillis = millis();
 
   // Check for serial access password in any mode except SERIAL_MODE
+  // Note: checkForSerialAccess() is non-blocking and only processes available serial data
   if (state.currentMode != SystemMode::SERIAL_MODE && SerialConfig::checkForSerialAccess())
   {
     state.currentMode = SystemMode::SERIAL_MODE;
