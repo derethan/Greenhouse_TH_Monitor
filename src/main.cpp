@@ -433,7 +433,7 @@ void setup()
  * - NORMAL_OPERATION: Regular sensor reading, data publishing, and sleep cycles
  * - CONFIG_MODE: Access point mode for WiFi configuration
  * - WAKE_UP: Recovery and reconnection after sleep
- * - SERIAL_MODE: Serial configuration interface (future implementation)
+ * - SERIAL_MODE: Serial configuration interface
  * - ERROR: Error handling state
  *
  * Runs continuously after setup() completes.
@@ -547,8 +547,12 @@ void loop()
     //   network.handleClientRequestsWithSensorData(latestReadings);
     // }
 
-    // Sleep testing
-    sleep(currentMillis);
+      // Sleep Mode - only if not connected via USB Serial
+      if (!Serial)
+      {
+        sleep(currentMillis);
+      }
+
 
     break;
   }
