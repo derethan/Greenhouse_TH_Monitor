@@ -164,7 +164,7 @@ namespace SerialCLI
             waitForEnter();
             break;
         case 3:
-            configureStateSettings(state);
+            configureStateSettings(state, network);
             break;
         case 4:
             configureNetworkSettings(network);
@@ -304,7 +304,7 @@ namespace SerialCLI
     /**
      * @brief Display and modify state configuration settings
      */
-    void configureStateSettings(SystemState &state)
+    void configureStateSettings(SystemState &state, NetworkConnections &network)
     {
         displaySectionHeader("STATE CONFIGURATION");
 
@@ -341,6 +341,7 @@ namespace SerialCLI
         }
 
         Serial.println();
+        bool settingChanged = false;
 
         switch (input.toInt())
         {
@@ -353,6 +354,7 @@ namespace SerialCLI
                 if (newValue >= 5000)
                 {
                     state.sensorRead_interval = newValue;
+                    settingChanged = true;
                     Serial.println("Updated successfully!");
                 }
                 else
@@ -371,6 +373,7 @@ namespace SerialCLI
                 if (newValue >= 10000)
                 {
                     state.httpPublishInterval = newValue;
+                    settingChanged = true;
                     Serial.println("Updated successfully!");
                 }
                 else
@@ -387,11 +390,13 @@ namespace SerialCLI
             if (input == "y" || input == "yes")
             {
                 state.httpPublishEnabled = true;
+                settingChanged = true;
                 Serial.println("HTTP Publishing enabled");
             }
             else if (input == "n" || input == "no")
             {
                 state.httpPublishEnabled = false;
+                settingChanged = true;
                 Serial.println("HTTP Publishing disabled");
             }
             break;
@@ -403,6 +408,7 @@ namespace SerialCLI
             {
                 unsigned long newValue = input.toInt() * 1000;
                 state.SENSOR_STABILIZATION_TIME = newValue;
+                settingChanged = true;
                 Serial.println("Updated successfully!");
             }
             break;
@@ -416,6 +422,7 @@ namespace SerialCLI
                 if (seconds >= 1)
                 {
                     state.SLEEP_DURATION = (uint64_t)seconds * 1000000ULL;
+                    settingChanged = true;
                     Serial.println("Updated successfully!");
                 }
                 else
@@ -428,6 +435,25 @@ namespace SerialCLI
         default:
             Serial.println("Invalid option");
             break;
+        }
+
+        // Save settings to NVS if any changes were made
+        if (settingChanged)
+        {
+            Serial.println("Saving settings to NVS...");
+            DeviceSettings settings;
+            settings.sleepDuration = state.SLEEP_DURATION;
+            settings.sensorReadInterval = state.sensorRead_interval;
+            settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
+            settings.deviceID = state.deviceID;
+            settings.idCode = state.idCode;
+            settings.httpPublishEnabled = state.httpPublishEnabled;
+            settings.httpPublishInterval = state.httpPublishInterval;
+            settings.ntpRetryEnabled = true; // Keep existing value
+            settings.ntpRetryInterval = 3600000; // Keep existing value
+            
+            network.saveDeviceSettings(settings);
+            Serial.println("Settings saved to NVS successfully!");
         }
 
         Serial.println();
@@ -444,7 +470,8 @@ namespace SerialCLI
         Serial.println("Network configuration options:");
         Serial.println("1. Scan for WiFi Networks");
         Serial.println("2. View Stored WiFi Credentials");
-        Serial.println("3. Update WiFi Credentials");
+        Serial.println("3. View Network Configuration (IP, Gateway, DNS)");
+        Serial.println("4. Configure Network Settings (IP, Gateway, DNS)");
         Serial.println("0. Back to Main Menu");
         Serial.println();
         Serial.print("Select option: ");
@@ -498,9 +525,149 @@ namespace SerialCLI
         }
 
         case 3:
-            Serial.println("WiFi credential update must be done through web interface");
-            Serial.println("or by entering CONFIG_MODE");
+        {
+            // View network configuration
+            IPAddress ip, gateway, subnet, dns1, dns2;
+            bool hasConfig = network.loadNetworkConfig(ip, gateway, subnet, dns1, dns2);
+            
+            Serial.println("Stored Network Configuration:");
+            if (hasConfig)
+            {
+                Serial.print("IP Address: ");
+                Serial.println(ip.toString());
+                Serial.print("Gateway: ");
+                Serial.println(gateway.toString());
+                Serial.print("Subnet Mask: ");
+                Serial.println(subnet.toString());
+                Serial.print("DNS 1: ");
+                Serial.println(dns1.toString());
+                Serial.print("DNS 2: ");
+                Serial.println(dns2.toString());
+            }
+            else
+            {
+                Serial.println("No network configuration stored (using DHCP)");
+            }
+            
+            Serial.println();
+            Serial.println("Current Active Network Configuration:");
+            if (WiFi.status() == WL_CONNECTED)
+            {
+                Serial.print("IP Address: ");
+                Serial.println(WiFi.localIP());
+                Serial.print("Gateway: ");
+                Serial.println(WiFi.gatewayIP());
+                Serial.print("Subnet Mask: ");
+                Serial.println(WiFi.subnetMask());
+                Serial.print("DNS 1: ");
+                Serial.println(WiFi.dnsIP(0));
+                Serial.print("DNS 2: ");
+                Serial.println(WiFi.dnsIP(1));
+            }
+            else
+            {
+                Serial.println("Not connected to WiFi");
+            }
             break;
+        }
+
+        case 4:
+        {
+            // Configure network settings
+            Serial.println("Configure Network Settings");
+            Serial.println();
+            Serial.println("Current configuration:");
+            
+            IPAddress ip, gateway, subnet, dns1, dns2;
+            bool hasConfig = network.loadNetworkConfig(ip, gateway, subnet, dns1, dns2);
+            
+            if (!hasConfig)
+            {
+                // Use current WiFi settings as defaults
+                ip = WiFi.localIP();
+                gateway = WiFi.gatewayIP();
+                subnet = WiFi.subnetMask();
+                dns1 = WiFi.dnsIP(0);
+                dns2 = WiFi.dnsIP(1);
+            }
+            
+            Serial.print("IP Address: ");
+            Serial.println(ip.toString());
+            Serial.print("Gateway: ");
+            Serial.println(gateway.toString());
+            Serial.print("Subnet: ");
+            Serial.println(subnet.toString());
+            Serial.print("DNS 1: ");
+            Serial.println(dns1.toString());
+            Serial.print("DNS 2: ");
+            Serial.println(dns2.toString());
+            Serial.println();
+            
+            Serial.println("Enter new IP address (or press Enter to keep current): ");
+            String ipStr = readSerialInput();
+            if (ipStr.length() > 0)
+            {
+                ip.fromString(ipStr);
+            }
+            
+            Serial.println("Enter new Gateway (or press Enter to keep current): ");
+            String gwStr = readSerialInput();
+            if (gwStr.length() > 0)
+            {
+                gateway.fromString(gwStr);
+            }
+            
+            Serial.println("Enter new Subnet Mask (or press Enter to keep current): ");
+            String subnetStr = readSerialInput();
+            if (subnetStr.length() > 0)
+            {
+                subnet.fromString(subnetStr);
+            }
+            
+            Serial.println("Enter new DNS 1 (or press Enter to keep current): ");
+            String dns1Str = readSerialInput();
+            if (dns1Str.length() > 0)
+            {
+                dns1.fromString(dns1Str);
+            }
+            
+            Serial.println("Enter new DNS 2 (or press Enter to keep current): ");
+            String dns2Str = readSerialInput();
+            if (dns2Str.length() > 0)
+            {
+                dns2.fromString(dns2Str);
+            }
+            
+            Serial.println();
+            Serial.println("New configuration:");
+            Serial.print("IP Address: ");
+            Serial.println(ip.toString());
+            Serial.print("Gateway: ");
+            Serial.println(gateway.toString());
+            Serial.print("Subnet: ");
+            Serial.println(subnet.toString());
+            Serial.print("DNS 1: ");
+            Serial.println(dns1.toString());
+            Serial.print("DNS 2: ");
+            Serial.println(dns2.toString());
+            Serial.println();
+            
+            Serial.print("Save this configuration? (y/n): ");
+            String confirm = readSerialInput();
+            confirm.toLowerCase();
+            
+            if (confirm == "y" || confirm == "yes")
+            {
+                network.saveNetworkConfig(ip, gateway, subnet, dns1, dns2);
+                Serial.println("Network configuration saved to NVS!");
+                Serial.println("Note: Changes will take effect after next WiFi connection.");
+            }
+            else
+            {
+                Serial.println("Configuration not saved.");
+            }
+            break;
+        }
 
         default:
             Serial.println("Invalid option");
@@ -519,15 +686,76 @@ namespace SerialCLI
         displaySectionHeader("DEVICE CONFIGURATION");
 
         Serial.println("Current Device Settings:");
-        Serial.print("Device ID: ");
+        Serial.print("1. Device ID: ");
         Serial.println(state.deviceID);
-        Serial.print("ID Code: ");
+        Serial.print("2. ID Code: ");
         Serial.println(state.idCode);
         Serial.println();
-        Serial.println("Note: Device settings are loaded from NVS at startup.");
-        Serial.println("Changes made here are temporary and will be lost on restart.");
+        Serial.println("0. Back to Main Menu");
         Serial.println();
+        Serial.print("Select setting to modify (or 0 to return): ");
 
+        String input = readSerialInput();
+        input.trim();
+
+        if (input == "0" || input.length() == 0)
+        {
+            return;
+        }
+
+        Serial.println();
+        bool settingChanged = false;
+
+        switch (input.toInt())
+        {
+        case 1:
+            Serial.print("Enter new Device ID: ");
+            input = readSerialInput();
+            if (input.length() > 0)
+            {
+                state.deviceID = input;
+                settingChanged = true;
+                Serial.println("Device ID updated successfully!");
+            }
+            break;
+
+        case 2:
+            Serial.print("Enter new ID Code: ");
+            input = readSerialInput();
+            if (input.length() > 0)
+            {
+                state.idCode = input;
+                settingChanged = true;
+                Serial.println("ID Code updated successfully!");
+            }
+            break;
+
+        default:
+            Serial.println("Invalid option");
+            break;
+        }
+
+        // Save settings to NVS if any changes were made
+        if (settingChanged)
+        {
+            Serial.println("Saving device settings to NVS...");
+            DeviceSettings settings;
+            settings.sleepDuration = state.SLEEP_DURATION;
+            settings.sensorReadInterval = state.sensorRead_interval;
+            settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
+            settings.deviceID = state.deviceID;
+            settings.idCode = state.idCode;
+            settings.httpPublishEnabled = state.httpPublishEnabled;
+            settings.httpPublishInterval = state.httpPublishInterval;
+            settings.ntpRetryEnabled = true; // Keep existing value
+            settings.ntpRetryInterval = 3600000; // Keep existing value
+            settings.valid = true;
+            
+            network.saveDeviceSettings(settings);
+            Serial.println("Device settings saved to NVS successfully!");
+        }
+
+        Serial.println();
         waitForEnter();
     }
 

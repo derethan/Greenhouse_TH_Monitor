@@ -79,8 +79,9 @@ namespace SerialCLI
     /**
      * @brief Display and modify state configuration settings
      * @param state Reference to system state object
+     * @param network Reference to network connections object
      */
-    void configureStateSettings(SystemState &state);
+    void configureStateSettings(SystemState &state, NetworkConnections &network);
 
     /**
      * @brief Configure network settings
