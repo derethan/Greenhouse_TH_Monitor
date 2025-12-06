@@ -440,21 +440,7 @@ namespace SerialCLI
         // Save settings to NVS if any changes were made
         if (settingChanged)
         {
-            Serial.println("Saving settings to NVS...");
-            // Load existing settings first to preserve values we're not modifying
-            DeviceSettings settings = network.loadDeviceSettings();
-            // Update with current state values
-            settings.sleepDuration = state.SLEEP_DURATION;
-            settings.sensorReadInterval = state.sensorRead_interval;
-            settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
-            settings.deviceID = state.deviceID;
-            settings.idCode = state.idCode;
-            settings.httpPublishEnabled = state.httpPublishEnabled;
-            settings.httpPublishInterval = state.httpPublishInterval;
-            // NTP settings are preserved from loaded settings
-            
-            network.saveDeviceSettings(settings);
-            Serial.println("Settings saved to NVS successfully!");
+            saveDeviceSettingsToNVS(state, network);
         }
 
         Serial.println();
@@ -739,22 +725,7 @@ namespace SerialCLI
         // Save settings to NVS if any changes were made
         if (settingChanged)
         {
-            Serial.println("Saving device settings to NVS...");
-            // Load existing settings first to preserve values we're not modifying
-            DeviceSettings settings = network.loadDeviceSettings();
-            // Update with current state values
-            settings.sleepDuration = state.SLEEP_DURATION;
-            settings.sensorReadInterval = state.sensorRead_interval;
-            settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
-            settings.deviceID = state.deviceID;
-            settings.idCode = state.idCode;
-            settings.httpPublishEnabled = state.httpPublishEnabled;
-            settings.httpPublishInterval = state.httpPublishInterval;
-            settings.valid = true;
-            // NTP settings are preserved from loaded settings
-            
-            network.saveDeviceSettings(settings);
-            Serial.println("Device settings saved to NVS successfully!");
+            saveDeviceSettingsToNVS(state, network);
         }
 
         Serial.println();
@@ -926,6 +897,29 @@ namespace SerialCLI
         Serial.print("Press Enter to continue...");
         readSerialInput();
         Serial.println();
+    }
+
+    /**
+     * @brief Helper function to save device settings to NVS
+     */
+    void saveDeviceSettingsToNVS(SystemState &state, NetworkConnections &network)
+    {
+        Serial.println("Saving settings to NVS...");
+        // Load existing settings first to preserve values we're not modifying
+        DeviceSettings settings = network.loadDeviceSettings();
+        // Update with current state values
+        settings.sleepDuration = state.SLEEP_DURATION;
+        settings.sensorReadInterval = state.sensorRead_interval;
+        settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
+        settings.deviceID = state.deviceID;
+        settings.idCode = state.idCode;
+        settings.httpPublishEnabled = state.httpPublishEnabled;
+        settings.httpPublishInterval = state.httpPublishInterval;
+        settings.valid = true;
+        // NTP settings are preserved from loaded settings
+        
+        network.saveDeviceSettings(settings);
+        Serial.println("Settings saved to NVS successfully!");
     }
 
 } // namespace SerialCLI

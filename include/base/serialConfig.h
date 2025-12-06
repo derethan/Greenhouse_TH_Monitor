@@ -129,6 +129,16 @@ namespace SerialCLI
      * @brief Wait for user to press Enter to continue
      */
     void waitForEnter();
+
+    /**
+     * @brief Helper function to save device settings to NVS
+     * @param state Reference to system state object
+     * @param network Reference to network connections object
+     * 
+     * Loads existing settings, updates with current state values, and saves to NVS.
+     * Preserves settings that are not part of the system state (like NTP configuration).
+     */
+    void saveDeviceSettingsToNVS(SystemState &state, NetworkConnections &network);
 } // namespace SerialCLI
 
 #endif // BASE_SERIALCONFIG_H
