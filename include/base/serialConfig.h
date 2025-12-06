@@ -17,10 +17,10 @@
 #include "../latestReadings.h"
 
 /**
- * @namespace SerialConfig
+ * @namespace SerialCLI
  * @brief Serial configuration menu system for device management
  */
-namespace SerialConfig
+namespace SerialCLI
 {
     /**
      * @brief Check if user has entered the serial access password
@@ -128,6 +128,6 @@ namespace SerialConfig
      * @brief Wait for user to press Enter to continue
      */
     void waitForEnter();
-}
+} // namespace SerialCLI
 
 #endif // BASE_SERIALCONFIG_H

@@ -444,8 +444,9 @@ void loop()
 
   // Check for serial access password in any mode except SERIAL_MODE
   // Note: checkForSerialAccess() is non-blocking and only processes available serial data
-  if (state.currentMode != SystemMode::SERIAL_MODE && SerialConfig::checkForSerialAccess())
+  if (state.currentMode != SystemMode::SERIAL_MODE && SerialCLI::checkForSerialAccess())
   {
+    state.previousMode = state.currentMode;
     state.currentMode = SystemMode::SERIAL_MODE;
   }
 
@@ -547,12 +548,11 @@ void loop()
     //   network.handleClientRequestsWithSensorData(latestReadings);
     // }
 
-      // Sleep Mode - only if not connected via USB Serial
-      if (!Serial)
-      {
-        sleep(currentMillis);
-      }
-
+    // Sleep Mode - only if not connected via USB Serial
+    if (!Serial)
+    {
+      sleep(currentMillis);
+    }
 
     break;
   }
@@ -632,10 +632,12 @@ void loop()
 
   case SystemMode::SERIAL_MODE:
   {
+    SysLogs::logInfo("SYSTEM", "Entering Serial Configuration Mode");
+
     // Serial configuration mode for user interaction
     // This mode disables debug logging and presents an interactive menu
     // for device configuration, diagnostics, and system management
-    SerialConfig::enterSerialMode(state, network, dhtSensor, latestReadings);
+    SerialCLI::enterSerialMode(state, network, dhtSensor, latestReadings);
     // Mode will be restored to previous state by enterSerialMode()
     break;
   }

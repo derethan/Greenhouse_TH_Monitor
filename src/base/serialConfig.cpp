@@ -1,7 +1,7 @@
 /**
  * @file serialConfig.cpp
  * @brief Implementation of serial configuration interface for device management
- * 
+ *
  * Provides interactive CLI-based configuration menu accessible via serial connection.
  */
 
@@ -10,7 +10,7 @@
 #include "../../include/config.h"
 #include <WiFi.h>
 
-namespace SerialConfig
+namespace SerialCLI
 {
     // Static buffer for serial input accumulation
     static String serialInputBuffer = "";
@@ -20,9 +20,14 @@ namespace SerialConfig
      */
     bool checkForSerialAccess()
     {
+
         while (Serial.available() > 0)
         {
+
             char c = Serial.read();
+            // Print Serial
+            Serial.print(c);
+
             if (c == '\n' || c == '\r')
             {
                 // Check if accumulated input matches password
@@ -50,32 +55,30 @@ namespace SerialConfig
      * @brief Main entry point for serial configuration mode
      */
     void enterSerialMode(SystemState &state, NetworkConnections &network,
-                        DHTSensor &dhtSensor, LatestReadings &latestReadings)
+                         DHTSensor &dhtSensor, LatestReadings &latestReadings)
     {
-        // Store previous DEBUG_MODE state
-        extern bool DEBUG_MODE;
+        // Store previous DEBUG_MODE state (global variable declared in config.h)
         bool previousDebugMode = DEBUG_MODE;
-        
+
         // Disable debug mode to prevent log spam
         DEBUG_MODE = false;
-        
+
         // Save previous mode and track entry time
-        state.previousMode = state.currentMode;
         state.serialModeStartTime = millis();
-        
+
         // Clear serial buffer
         while (Serial.available() > 0)
         {
             Serial.read();
         }
-        
+
         Serial.println();
         Serial.println();
         displaySectionHeader("SERIAL CONFIGURATION MODE");
         Serial.println("Debug logging has been disabled.");
         Serial.println("Type 'exit' at any time to return to normal operation.");
         Serial.println();
-        
+
         // Main menu loop
         bool continueMode = true;
         while (continueMode)
@@ -87,15 +90,19 @@ namespace SerialConfig
                 Serial.println("Session timeout. Returning to normal operation...");
                 break;
             }
-            
+
             displayMainMenu();
             continueMode = processMenuSelection(state, network, dhtSensor, latestReadings);
         }
-        
+
         // Restore previous state
         DEBUG_MODE = previousDebugMode;
+
         state.currentMode = state.previousMode;
-        
+
+        // log the state
+        SysLogs::logInfo("SYSTEM", "Exiting serial mode. Previous mode: " + String((int)state.previousMode) + ", Current mode: " + String((int)state.currentMode));
+
         Serial.println();
         displaySectionHeader("EXITING SERIAL MODE");
         Serial.println("Debug logging has been re-enabled.");
@@ -127,54 +134,54 @@ namespace SerialConfig
      * @brief Read and process user menu selection
      */
     bool processMenuSelection(SystemState &state, NetworkConnections &network,
-                             DHTSensor &dhtSensor, LatestReadings &latestReadings)
+                              DHTSensor &dhtSensor, LatestReadings &latestReadings)
     {
         String input = readSerialInput(60000); // 60 second timeout
         input.trim();
-        
+
         if (input.length() == 0)
         {
             Serial.println("\nNo input received. Try again.");
             return true;
         }
-        
+
         // Check for exit command
         if (input.equalsIgnoreCase("exit") || input == "0")
         {
             return false;
         }
-        
+
         Serial.println(); // New line after input
-        
+
         switch (input.toInt())
         {
-            case 1:
-                displayNetworkInfo(network);
-                waitForEnter();
-                break;
-            case 2:
-                displaySystemInfo(state);
-                waitForEnter();
-                break;
-            case 3:
-                configureStateSettings(state);
-                break;
-            case 4:
-                configureNetworkSettings(network);
-                break;
-            case 5:
-                configureDeviceSettings(state, network);
-                break;
-            case 6:
-                runDiagnostics(state, dhtSensor, latestReadings);
-                waitForEnter();
-                break;
-            default:
-                Serial.println("Invalid option. Please try again.");
-                delay(1000);
-                break;
+        case 1:
+            displayNetworkInfo(network);
+            waitForEnter();
+            break;
+        case 2:
+            displaySystemInfo(state);
+            waitForEnter();
+            break;
+        case 3:
+            configureStateSettings(state);
+            break;
+        case 4:
+            configureNetworkSettings(network);
+            break;
+        case 5:
+            configureDeviceSettings(state, network);
+            break;
+        case 6:
+            runDiagnostics(state, dhtSensor, latestReadings);
+            waitForEnter();
+            break;
+        default:
+            Serial.println("Invalid option. Please try again.");
+            delay(1000);
+            break;
         }
-        
+
         return true;
     }
 
@@ -184,7 +191,7 @@ namespace SerialConfig
     void displayNetworkInfo(NetworkConnections &network)
     {
         displaySectionHeader("NETWORK INFORMATION");
-        
+
         if (WiFi.status() == WL_CONNECTED)
         {
             Serial.println("Status: Connected");
@@ -220,7 +227,7 @@ namespace SerialConfig
         {
             Serial.println("Status: Disconnected");
         }
-        
+
         Serial.println();
     }
 
@@ -230,7 +237,7 @@ namespace SerialConfig
     void displaySystemInfo(SystemState &state)
     {
         displaySectionHeader("SYSTEM INFORMATION");
-        
+
         Serial.print("Device ID: ");
         Serial.println(state.deviceID);
         Serial.print("ID Code: ");
@@ -238,51 +245,51 @@ namespace SerialConfig
         Serial.print("Current Mode: ");
         switch (state.currentMode)
         {
-            case SystemMode::INITIALIZING:
-                Serial.println("INITIALIZING");
-                break;
-            case SystemMode::NORMAL_OPERATION:
-                Serial.println("NORMAL_OPERATION");
-                break;
-            case SystemMode::CONFIG_MODE:
-                Serial.println("CONFIG_MODE");
-                break;
-            case SystemMode::WAKE_UP:
-                Serial.println("WAKE_UP");
-                break;
-            case SystemMode::SERIAL_MODE:
-                Serial.println("SERIAL_MODE");
-                break;
-            case SystemMode::ERROR:
-                Serial.println("ERROR");
-                break;
-            default:
-                Serial.println("UNKNOWN");
-                break;
+        case SystemMode::INITIALIZING:
+            Serial.println("INITIALIZING");
+            break;
+        case SystemMode::NORMAL_OPERATION:
+            Serial.println("NORMAL_OPERATION");
+            break;
+        case SystemMode::CONFIG_MODE:
+            Serial.println("CONFIG_MODE");
+            break;
+        case SystemMode::WAKE_UP:
+            Serial.println("WAKE_UP");
+            break;
+        case SystemMode::SERIAL_MODE:
+            Serial.println("SERIAL_MODE");
+            break;
+        case SystemMode::ERROR:
+            Serial.println("ERROR");
+            break;
+        default:
+            Serial.println("UNKNOWN");
+            break;
         }
-        
+
         Serial.print("Uptime: ");
         Serial.print(millis() / 1000);
         Serial.println(" seconds");
-        
+
         Serial.print("Free Heap: ");
         Serial.print(ESP.getFreeHeap());
         Serial.println(" bytes");
-        
+
         Serial.print("Chip Model: ");
         Serial.println(ESP.getChipModel());
-        
+
         Serial.print("Chip Revision: ");
         Serial.println(ESP.getChipRevision());
-        
+
         Serial.print("CPU Frequency: ");
         Serial.print(ESP.getCpuFreqMHz());
         Serial.println(" MHz");
-        
+
         Serial.print("Flash Size: ");
         Serial.print(ESP.getFlashChipSize() / 1024 / 1024);
         Serial.println(" MB");
-        
+
         if (state.sensorError)
         {
             Serial.println();
@@ -290,7 +297,7 @@ namespace SerialConfig
             Serial.print("Last Error: ");
             Serial.println(state.lastErrorMessage);
         }
-        
+
         Serial.println();
     }
 
@@ -300,129 +307,129 @@ namespace SerialConfig
     void configureStateSettings(SystemState &state)
     {
         displaySectionHeader("STATE CONFIGURATION");
-        
+
         Serial.println("Current Settings:");
         Serial.print("1. Sensor Read Interval: ");
         Serial.print(state.sensorRead_interval / 1000);
         Serial.println(" seconds");
-        
+
         Serial.print("2. HTTP Publish Interval: ");
         Serial.print(state.httpPublishInterval / 1000);
         Serial.println(" seconds");
-        
+
         Serial.print("3. HTTP Publish Enabled: ");
         Serial.println(state.httpPublishEnabled ? "Yes" : "No");
-        
+
         Serial.print("4. Sensor Stabilization Time: ");
         Serial.print(state.SENSOR_STABILIZATION_TIME / 1000);
         Serial.println(" seconds");
-        
+
         Serial.print("5. Sleep Duration: ");
         Serial.print(state.SLEEP_DURATION / 1000000);
         Serial.println(" seconds");
-        
+
         Serial.println("0. Back to Main Menu");
         Serial.println();
         Serial.print("Select setting to modify (or 0 to return): ");
-        
+
         String input = readSerialInput();
         input.trim();
-        
+
         if (input == "0" || input.length() == 0)
         {
             return;
         }
-        
+
         Serial.println();
-        
+
         switch (input.toInt())
         {
-            case 1:
-                Serial.print("Enter new Sensor Read Interval (seconds): ");
-                input = readSerialInput();
-                if (input.length() > 0)
+        case 1:
+            Serial.print("Enter new Sensor Read Interval (seconds): ");
+            input = readSerialInput();
+            if (input.length() > 0)
+            {
+                unsigned long newValue = input.toInt() * 1000;
+                if (newValue >= 5000)
                 {
-                    unsigned long newValue = input.toInt() * 1000;
-                    if (newValue >= 5000)
-                    {
-                        state.sensorRead_interval = newValue;
-                        Serial.println("Updated successfully!");
-                    }
-                    else
-                    {
-                        Serial.println("Value too small (minimum 5 seconds)");
-                    }
-                }
-                break;
-                
-            case 2:
-                Serial.print("Enter new HTTP Publish Interval (seconds): ");
-                input = readSerialInput();
-                if (input.length() > 0)
-                {
-                    unsigned long newValue = input.toInt() * 1000;
-                    if (newValue >= 10000)
-                    {
-                        state.httpPublishInterval = newValue;
-                        Serial.println("Updated successfully!");
-                    }
-                    else
-                    {
-                        Serial.println("Value too small (minimum 10 seconds)");
-                    }
-                }
-                break;
-                
-            case 3:
-                Serial.print("Enable HTTP Publishing? (y/n): ");
-                input = readSerialInput();
-                input.toLowerCase();
-                if (input == "y" || input == "yes")
-                {
-                    state.httpPublishEnabled = true;
-                    Serial.println("HTTP Publishing enabled");
-                }
-                else if (input == "n" || input == "no")
-                {
-                    state.httpPublishEnabled = false;
-                    Serial.println("HTTP Publishing disabled");
-                }
-                break;
-                
-            case 4:
-                Serial.print("Enter new Stabilization Time (seconds): ");
-                input = readSerialInput();
-                if (input.length() > 0)
-                {
-                    unsigned long newValue = input.toInt() * 1000;
-                    state.SENSOR_STABILIZATION_TIME = newValue;
+                    state.sensorRead_interval = newValue;
                     Serial.println("Updated successfully!");
                 }
-                break;
-                
-            case 5:
-                Serial.print("Enter new Sleep Duration (seconds): ");
-                input = readSerialInput();
-                if (input.length() > 0)
+                else
                 {
-                    long seconds = input.toInt();
-                    if (seconds >= 1)
-                    {
-                        state.SLEEP_DURATION = (uint64_t)seconds * 1000000ULL;
-                        Serial.println("Updated successfully!");
-                    }
-                    else
-                    {
-                        Serial.println("Value too small (minimum 1 second)");
-                    }
+                    Serial.println("Value too small (minimum 5 seconds)");
                 }
-                break;
-                
-            default:
-                Serial.println("Invalid option");
-                break;
+            }
+            break;
+
+        case 2:
+            Serial.print("Enter new HTTP Publish Interval (seconds): ");
+            input = readSerialInput();
+            if (input.length() > 0)
+            {
+                unsigned long newValue = input.toInt() * 1000;
+                if (newValue >= 10000)
+                {
+                    state.httpPublishInterval = newValue;
+                    Serial.println("Updated successfully!");
+                }
+                else
+                {
+                    Serial.println("Value too small (minimum 10 seconds)");
+                }
+            }
+            break;
+
+        case 3:
+            Serial.print("Enable HTTP Publishing? (y/n): ");
+            input = readSerialInput();
+            input.toLowerCase();
+            if (input == "y" || input == "yes")
+            {
+                state.httpPublishEnabled = true;
+                Serial.println("HTTP Publishing enabled");
+            }
+            else if (input == "n" || input == "no")
+            {
+                state.httpPublishEnabled = false;
+                Serial.println("HTTP Publishing disabled");
+            }
+            break;
+
+        case 4:
+            Serial.print("Enter new Stabilization Time (seconds): ");
+            input = readSerialInput();
+            if (input.length() > 0)
+            {
+                unsigned long newValue = input.toInt() * 1000;
+                state.SENSOR_STABILIZATION_TIME = newValue;
+                Serial.println("Updated successfully!");
+            }
+            break;
+
+        case 5:
+            Serial.print("Enter new Sleep Duration (seconds): ");
+            input = readSerialInput();
+            if (input.length() > 0)
+            {
+                long seconds = input.toInt();
+                if (seconds >= 1)
+                {
+                    state.SLEEP_DURATION = (uint64_t)seconds * 1000000ULL;
+                    Serial.println("Updated successfully!");
+                }
+                else
+                {
+                    Serial.println("Value too small (minimum 1 second)");
+                }
+            }
+            break;
+
+        default:
+            Serial.println("Invalid option");
+            break;
         }
-        
+
         Serial.println();
         waitForEnter();
     }
@@ -433,7 +440,7 @@ namespace SerialConfig
     void configureNetworkSettings(NetworkConnections &network)
     {
         displaySectionHeader("NETWORK CONFIGURATION");
-        
+
         Serial.println("Network configuration options:");
         Serial.println("1. Scan for WiFi Networks");
         Serial.println("2. View Stored WiFi Credentials");
@@ -441,65 +448,65 @@ namespace SerialConfig
         Serial.println("0. Back to Main Menu");
         Serial.println();
         Serial.print("Select option: ");
-        
+
         String input = readSerialInput();
         input.trim();
-        
+
         if (input == "0" || input.length() == 0)
         {
             return;
         }
-        
+
         Serial.println();
-        
+
         switch (input.toInt())
         {
-            case 1:
-                Serial.println("Scanning for networks...");
-                {
-                    int n = WiFi.scanNetworks();
-                    Serial.print("Found ");
-                    Serial.print(n);
-                    Serial.println(" networks:");
-                    for (int i = 0; i < n; i++)
-                    {
-                        Serial.print(i + 1);
-                        Serial.print(". ");
-                        Serial.print(WiFi.SSID(i));
-                        Serial.print(" (");
-                        Serial.print(WiFi.RSSI(i));
-                        Serial.print(" dBm) ");
-                        Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "[Open]" : "[Secured]");
-                    }
-                }
-                break;
-                
-            case 2:
+        case 1:
+            Serial.println("Scanning for networks...");
             {
-                WiFiCredentials creds = network.loadWiFiCredentials();
-                if (creds.valid)
+                int n = WiFi.scanNetworks();
+                Serial.print("Found ");
+                Serial.print(n);
+                Serial.println(" networks:");
+                for (int i = 0; i < n; i++)
                 {
-                    Serial.print("SSID: ");
-                    Serial.println(creds.ssid);
-                    Serial.println("Password: ********");
+                    Serial.print(i + 1);
+                    Serial.print(". ");
+                    Serial.print(WiFi.SSID(i));
+                    Serial.print(" (");
+                    Serial.print(WiFi.RSSI(i));
+                    Serial.print(" dBm) ");
+                    Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "[Open]" : "[Secured]");
                 }
-                else
-                {
-                    Serial.println("No stored credentials found");
-                }
-                break;
             }
-                
-            case 3:
-                Serial.println("WiFi credential update must be done through web interface");
-                Serial.println("or by entering CONFIG_MODE");
-                break;
-                
-            default:
-                Serial.println("Invalid option");
-                break;
+            break;
+
+        case 2:
+        {
+            WiFiCredentials creds = network.loadWiFiCredentials();
+            if (creds.valid)
+            {
+                Serial.print("SSID: ");
+                Serial.println(creds.ssid);
+                Serial.println("Password: ********");
+            }
+            else
+            {
+                Serial.println("No stored credentials found");
+            }
+            break;
         }
-        
+
+        case 3:
+            Serial.println("WiFi credential update must be done through web interface");
+            Serial.println("or by entering CONFIG_MODE");
+            break;
+
+        default:
+            Serial.println("Invalid option");
+            break;
+        }
+
         Serial.println();
         waitForEnter();
     }
@@ -510,7 +517,7 @@ namespace SerialConfig
     void configureDeviceSettings(SystemState &state, NetworkConnections &network)
     {
         displaySectionHeader("DEVICE CONFIGURATION");
-        
+
         Serial.println("Current Device Settings:");
         Serial.print("Device ID: ");
         Serial.println(state.deviceID);
@@ -520,7 +527,7 @@ namespace SerialConfig
         Serial.println("Note: Device settings are loaded from NVS at startup.");
         Serial.println("Changes made here are temporary and will be lost on restart.");
         Serial.println();
-        
+
         waitForEnter();
     }
 
@@ -528,10 +535,10 @@ namespace SerialConfig
      * @brief Run diagnostics and testing tools
      */
     void runDiagnostics(SystemState &state, DHTSensor &dhtSensor,
-                       LatestReadings &latestReadings)
+                        LatestReadings &latestReadings)
     {
         displaySectionHeader("DIAGNOSTICS & TESTING");
-        
+
         Serial.println("Available Tests:");
         Serial.println("1. Read DHT Sensor");
         Serial.println("2. Test Memory");
@@ -539,93 +546,93 @@ namespace SerialConfig
         Serial.println("0. Back to Main Menu");
         Serial.println();
         Serial.print("Select test: ");
-        
+
         String input = readSerialInput();
         input.trim();
-        
+
         if (input == "0" || input.length() == 0)
         {
             return;
         }
-        
+
         Serial.println();
-        
+
         switch (input.toInt())
         {
-            case 1:
+        case 1:
+        {
+            Serial.println("Reading DHT sensor...");
+            float temp = dhtSensor.readTemperature();
+            float hum = dhtSensor.readHumidity();
+
+            if (isnan(temp) || isnan(hum))
+            {
+                Serial.println("ERROR: Failed to read from DHT sensor!");
+            }
+            else
+            {
+                Serial.print("Temperature: ");
+                Serial.print(temp);
+                Serial.println(" °C");
+                Serial.print("Humidity: ");
+                Serial.print(hum);
+                Serial.println(" %");
+
+                if (latestReadings.hasValidData)
                 {
-                    Serial.println("Reading DHT sensor...");
-                    float temp = dhtSensor.readTemperature();
-                    float hum = dhtSensor.readHumidity();
-                    
-                    if (isnan(temp) || isnan(hum))
-                    {
-                        Serial.println("ERROR: Failed to read from DHT sensor!");
-                    }
-                    else
-                    {
-                        Serial.print("Temperature: ");
-                        Serial.print(temp);
-                        Serial.println(" °C");
-                        Serial.print("Humidity: ");
-                        Serial.print(hum);
-                        Serial.println(" %");
-                        
-                        if (latestReadings.hasValidData)
-                        {
-                            Serial.println();
-                            Serial.println("Latest Readings in System:");
-                            Serial.print("  Temperature: ");
-                            Serial.print(latestReadings.temperature);
-                            Serial.println(" °C");
-                            Serial.print("  Humidity: ");
-                            Serial.print(latestReadings.humidity);
-                            Serial.println(" %");
-                        }
-                    }
+                    Serial.println();
+                    Serial.println("Latest Readings in System:");
+                    Serial.print("  Temperature: ");
+                    Serial.print(latestReadings.temperature);
+                    Serial.println(" °C");
+                    Serial.print("  Humidity: ");
+                    Serial.print(latestReadings.humidity);
+                    Serial.println(" %");
                 }
-                break;
-                
-            case 2:
-                {
-                    Serial.println("Memory Test:");
-                    Serial.print("Free Heap: ");
-                    Serial.print(ESP.getFreeHeap());
-                    Serial.println(" bytes");
-                    Serial.print("Heap Size: ");
-                    Serial.print(ESP.getHeapSize());
-                    Serial.println(" bytes");
-                    Serial.print("Min Free Heap: ");
-                    Serial.print(ESP.getMinFreeHeap());
-                    Serial.println(" bytes");
-                    Serial.print("Max Alloc Heap: ");
-                    Serial.print(ESP.getMaxAllocHeap());
-                    Serial.println(" bytes");
-                }
-                break;
-                
-            case 3:
-                {
-                    Serial.println("Network Connectivity Test:");
-                    if (WiFi.status() == WL_CONNECTED)
-                    {
-                        Serial.println("WiFi: Connected");
-                        Serial.print("Ping Gateway: ");
-                        // Note: Ping functionality would require additional implementation
-                        Serial.println("Not implemented");
-                    }
-                    else
-                    {
-                        Serial.println("WiFi: Not Connected");
-                    }
-                }
-                break;
-                
-            default:
-                Serial.println("Invalid option");
-                break;
+            }
         }
-        
+        break;
+
+        case 2:
+        {
+            Serial.println("Memory Test:");
+            Serial.print("Free Heap: ");
+            Serial.print(ESP.getFreeHeap());
+            Serial.println(" bytes");
+            Serial.print("Heap Size: ");
+            Serial.print(ESP.getHeapSize());
+            Serial.println(" bytes");
+            Serial.print("Min Free Heap: ");
+            Serial.print(ESP.getMinFreeHeap());
+            Serial.println(" bytes");
+            Serial.print("Max Alloc Heap: ");
+            Serial.print(ESP.getMaxAllocHeap());
+            Serial.println(" bytes");
+        }
+        break;
+
+        case 3:
+        {
+            Serial.println("Network Connectivity Test:");
+            if (WiFi.status() == WL_CONNECTED)
+            {
+                Serial.println("WiFi: Connected");
+                Serial.print("Ping Gateway: ");
+                // Note: Ping functionality would require additional implementation
+                Serial.println("Not implemented");
+            }
+            else
+            {
+                Serial.println("WiFi: Not Connected");
+            }
+        }
+        break;
+
+        default:
+            Serial.println("Invalid option");
+            break;
+        }
+
         Serial.println();
     }
 
@@ -636,7 +643,7 @@ namespace SerialConfig
     {
         String input = "";
         unsigned long startTime = millis();
-        
+
         while (millis() - startTime < timeoutMs)
         {
             if (Serial.available() > 0)
@@ -657,7 +664,7 @@ namespace SerialConfig
             }
             delay(10);
         }
-        
+
         return input;
     }
 
@@ -691,4 +698,4 @@ namespace SerialConfig
         Serial.println();
     }
 
-} // namespace SerialConfig
+} // namespace SerialCLI
