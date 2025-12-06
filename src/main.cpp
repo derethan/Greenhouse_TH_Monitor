@@ -35,8 +35,12 @@
 #include "state.h"
 #include "base/deviceConfig.h"
 #include "base/sysLogs.h"
+#include "base/serialConfig.h"
 
 #include "tempHumDeviceConfig.h"
+
+// Runtime DEBUG_MODE variable (replaces compile-time constant)
+bool DEBUG_MODE = true;
 
 /**
  * @brief Global system state object
@@ -429,7 +433,7 @@ void setup()
  * - NORMAL_OPERATION: Regular sensor reading, data publishing, and sleep cycles
  * - CONFIG_MODE: Access point mode for WiFi configuration
  * - WAKE_UP: Recovery and reconnection after sleep
- * - SERIAL_MODE: Serial configuration interface (future implementation)
+ * - SERIAL_MODE: Serial configuration interface
  * - ERROR: Error handling state
  *
  * Runs continuously after setup() completes.
@@ -437,6 +441,14 @@ void setup()
 void loop()
 {
   unsigned long currentMillis = millis();
+
+  // Check for serial access password in any mode except SERIAL_MODE
+  // Note: checkForSerialAccess() is non-blocking and only processes available serial data
+  if (state.currentMode != SystemMode::SERIAL_MODE && SerialCLI::checkForSerialAccess())
+  {
+    state.previousMode = state.currentMode;
+    state.currentMode = SystemMode::SERIAL_MODE;
+  }
 
   switch (state.currentMode)
   {
@@ -536,8 +548,11 @@ void loop()
     //   network.handleClientRequestsWithSensorData(latestReadings);
     // }
 
-    // Sleep testing
-    sleep(currentMillis);
+    // Sleep Mode - only if not connected via USB Serial
+    if (!Serial)
+    {
+      sleep(currentMillis);
+    }
 
     break;
   }
@@ -617,11 +632,13 @@ void loop()
 
   case SystemMode::SERIAL_MODE:
   {
-    // Future implementation for Serial Mode
-    // This mode is for user override for config via Serial. It will disable any existing debug statements.
-    // This mode will remain until a user exits.
-    // A menu will be presented to the user for configuration options.
-    // For now, just break
+    SysLogs::logInfo("SYSTEM", "Entering Serial Configuration Mode");
+
+    // Serial configuration mode for user interaction
+    // This mode disables debug logging and presents an interactive menu
+    // for device configuration, diagnostics, and system management
+    SerialCLI::enterSerialMode(state, network, dhtSensor, latestReadings);
+    // Mode will be restored to previous state by enterSerialMode()
     break;
   }
   }

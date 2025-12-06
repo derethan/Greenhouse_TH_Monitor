@@ -60,7 +60,6 @@ private:
     unsigned long lastReconnectAttempt = 0;
     const unsigned long RECONNECT_COOLDOWN = 30000; // 30 seconds between retry attempts
 
-    void saveDeviceSettings(const DeviceSettings &settings);
     void scanNetworks();
     void printNetworkInfo();
 
@@ -88,6 +87,7 @@ private:
 public:
     WiFiCredentials loadWiFiCredentials(); // New function
     DeviceSettings loadDeviceSettings();   // New function for loading device settings
+    void saveDeviceSettings(const DeviceSettings &settings); // Save device settings to NVS
 
     // WiFi and network methods
     void setupWiFi(WiFiCredentials credentials, String idCode, bool apON); // Modified to accept credentials
