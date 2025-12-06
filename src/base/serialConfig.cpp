@@ -441,7 +441,9 @@ namespace SerialCLI
         if (settingChanged)
         {
             Serial.println("Saving settings to NVS...");
-            DeviceSettings settings;
+            // Load existing settings first to preserve values we're not modifying
+            DeviceSettings settings = network.loadDeviceSettings();
+            // Update with current state values
             settings.sleepDuration = state.SLEEP_DURATION;
             settings.sensorReadInterval = state.sensorRead_interval;
             settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
@@ -449,8 +451,7 @@ namespace SerialCLI
             settings.idCode = state.idCode;
             settings.httpPublishEnabled = state.httpPublishEnabled;
             settings.httpPublishInterval = state.httpPublishInterval;
-            settings.ntpRetryEnabled = true; // Keep existing value
-            settings.ntpRetryInterval = 3600000; // Keep existing value
+            // NTP settings are preserved from loaded settings
             
             network.saveDeviceSettings(settings);
             Serial.println("Settings saved to NVS successfully!");
@@ -739,7 +740,9 @@ namespace SerialCLI
         if (settingChanged)
         {
             Serial.println("Saving device settings to NVS...");
-            DeviceSettings settings;
+            // Load existing settings first to preserve values we're not modifying
+            DeviceSettings settings = network.loadDeviceSettings();
+            // Update with current state values
             settings.sleepDuration = state.SLEEP_DURATION;
             settings.sensorReadInterval = state.sensorRead_interval;
             settings.sensorStabilizationTime = state.SENSOR_STABILIZATION_TIME;
@@ -747,9 +750,8 @@ namespace SerialCLI
             settings.idCode = state.idCode;
             settings.httpPublishEnabled = state.httpPublishEnabled;
             settings.httpPublishInterval = state.httpPublishInterval;
-            settings.ntpRetryEnabled = true; // Keep existing value
-            settings.ntpRetryInterval = 3600000; // Keep existing value
             settings.valid = true;
+            // NTP settings are preserved from loaded settings
             
             network.saveDeviceSettings(settings);
             Serial.println("Device settings saved to NVS successfully!");
