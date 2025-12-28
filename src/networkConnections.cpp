@@ -138,20 +138,20 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     SysLogs::print("Attempting to connect to SSID: ");
     SysLogs::println(ssid);
 
-    // // Try to load and apply saved network configuration first
-    // IPAddress savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2;
-    // if (loadNetworkConfig(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
-    // {
-    //     SysLogs::logInfo("NETWORK", " (using saved IP configuration)");
-    //     if (!WiFi.config(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
-    //     {
-    //         SysLogs::logInfo("NETWORK", "Failed to configure static IP, falling back to DHCP");
-    //     }
-    // }
-    // else
-    // {
-    //     SysLogs::logInfo("NETWORK", " (using DHCP)");
-    // }
+    // Try to load and apply saved network configuration first
+    IPAddress savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2;
+    if (loadNetworkConfig(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
+    {
+        SysLogs::logInfo("NETWORK", " (using saved IP configuration)");
+        if (!WiFi.config(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
+        {
+            SysLogs::logInfo("NETWORK", "Failed to configure static IP, falling back to DHCP");
+        }
+    }
+    else
+    {
+        SysLogs::logInfo("NETWORK", " (using DHCP)");
+    }
 
     WiFi.begin(ssid.c_str(), password.c_str());
 
