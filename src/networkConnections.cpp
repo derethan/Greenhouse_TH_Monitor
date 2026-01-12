@@ -466,11 +466,18 @@ void NetworkConnections::saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAd
 {
     SysLogs::logInfo("NETWORK", "[NETWORK] Checking network configuration for changes...");
 
-    uint32_t currentIP = hasNVSSettingChanged("network", "ip", (uint32_t &)ip);
-    uint32_t currentGateway = hasNVSSettingChanged("network", "gateway", (uint32_t &)gateway);
-    uint32_t currentSubnet = hasNVSSettingChanged("network", "subnet", (uint32_t &)subnet);
-    uint32_t currentDNS1 = hasNVSSettingChanged("network", "dns1", (uint32_t &)dns1);
-    uint32_t currentDNS2 = hasNVSSettingChanged("network", "dns2", (uint32_t &)dns2);
+    // Convert IPAddress to uint32_t properly
+    uint32_t ipValue = (uint32_t)ip;
+    uint32_t gatewayValue = (uint32_t)gateway;
+    uint32_t subnetValue = (uint32_t)subnet;
+    uint32_t dns1Value = (uint32_t)dns1;
+    uint32_t dns2Value = (uint32_t)dns2;
+
+    bool currentIP = hasNVSSettingChanged("network", "ip", ipValue);
+    bool currentGateway = hasNVSSettingChanged("network", "gateway", gatewayValue);
+    bool currentSubnet = hasNVSSettingChanged("network", "subnet", subnetValue);
+    bool currentDNS1 = hasNVSSettingChanged("network", "dns1", dns1Value);
+    bool currentDNS2 = hasNVSSettingChanged("network", "dns2", dns2Value);
     bool hasConfig = hasBoolNVSSettingChanged("network", "hasConfig", true);
 
     hasStoredNetworkConfig = true;

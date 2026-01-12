@@ -49,6 +49,10 @@ struct SystemState
   String lastErrorMessage;
 
   bool apAlwaysOn = false;
+
+  // Serial Mode tracking
+  SystemMode previousMode = SystemMode::INITIALIZING; // Track mode before entering SERIAL_MODE
+  unsigned long serialModeStartTime = 0; // Track when SERIAL_MODE was entered
 };
 
 extern SystemState state;
