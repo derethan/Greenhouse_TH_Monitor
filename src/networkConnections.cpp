@@ -15,6 +15,8 @@
 #include <esp_task_wdt.h>
 #include <HTTPClient.h>
 #include <WiFiClientSecure.h>
+#include <ESPmDNS.h>
+#include <ctype.h>
 #include <ArduinoJson.h>
 #include "dataProvider.h" // Include for sensor data access
 #include "server.h"       // Include for server configuration
@@ -44,6 +46,8 @@ Preferences preferences;
  */
 void NetworkConnections::setupWiFi(WiFiCredentials credentials, String idCode, bool apOn)
 {
+    mdnsIdCode = idCode;
+
     // If ApOn is true, then the AP mode is always on, use Wifi Mode for both Station and Ap
     if (apOn)
     {
@@ -138,7 +142,7 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     SysLogs::print("Attempting to connect to SSID: ");
     SysLogs::println(ssid);
 
-    // Try to load and apply saved network configuration first
+    // Use static network settings only when explicitly enabled in NVS.
     IPAddress savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2;
     if (loadNetworkConfig(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
     {
@@ -146,11 +150,15 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
         if (!WiFi.config(savedIP, savedGateway, savedSubnet, savedDNS1, savedDNS2))
         {
             SysLogs::logInfo("NETWORK", "Failed to configure static IP, falling back to DHCP");
+            IPAddress noIP(0, 0, 0, 0);
+            WiFi.config(noIP, noIP, noIP, noIP, noIP);
         }
     }
     else
     {
         SysLogs::logInfo("NETWORK", " (using DHCP)");
+        IPAddress noIP(0, 0, 0, 0);
+        WiFi.config(noIP, noIP, noIP, noIP, noIP);
     }
 
     WiFi.begin(ssid.c_str(), password.c_str());
@@ -177,14 +185,12 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
     {
         SysLogs::print("Connected to WiFi network: ");
         SysLogs::println(ssid);
+        startMDNS(mdnsIdCode);
         printNetworkInfo();
 
         // Store successful connection details
         lastConnectedSSID = ssid;
         lastConnectedPassword = password;
-
-        // Save network configuration for future use
-        saveNetworkConfig(WiFi.localIP(), WiFi.gatewayIP(), WiFi.subnetMask(), WiFi.dnsIP(0), WiFi.dnsIP(1));
 
         delay(1000); // Delay to allow connection to stabilize
         return true; // Successfully connected
@@ -414,10 +420,95 @@ bool NetworkConnections::reconnectToNetwork(int maxRetries)
 void NetworkConnections::disconnectWiFi()
 {
     SysLogs::logInfo("NETWORK", "[WIFI] Disconnecting WiFi for sleep...");
+
+    if (mdnsStarted)
+    {
+        MDNS.end();
+        mdnsStarted = false;
+        SysLogs::logInfo("NETWORK", "[mDNS] Service stopped");
+    }
+
     WiFi.disconnect(true); // true = turn off WiFi radio
     WiFi.mode(WIFI_OFF);
     delay(100);
     SysLogs::logInfo("NETWORK", "[WIFI] WiFi disconnected and radio turned off");
+}
+
+String NetworkConnections::buildMDNSHostname(const String &idCode)
+{
+    String raw = String(DEVICE_ID) + idCode;
+    String host = "";
+    bool lastWasDash = false;
+
+    for (size_t i = 0; i < raw.length(); i++)
+    {
+        char c = raw.charAt(i);
+        if (isalnum(static_cast<unsigned char>(c)))
+        {
+            host += static_cast<char>(tolower(static_cast<unsigned char>(c)));
+            lastWasDash = false;
+        }
+        else if (!lastWasDash)
+        {
+            host += '-';
+            lastWasDash = true;
+        }
+    }
+
+    while (host.length() > 0 && host.charAt(0) == '-')
+    {
+        host.remove(0, 1);
+    }
+
+    while (host.length() > 0 && host.charAt(host.length() - 1) == '-')
+    {
+        host.remove(host.length() - 1, 1);
+    }
+
+    if (host.length() == 0)
+    {
+        host = "esp32-device";
+    }
+
+    if (host.length() > 63)
+    {
+        host = host.substring(0, 63);
+    }
+
+    return host;
+}
+
+void NetworkConnections::startMDNS(const String &idCode)
+{
+    if (WiFi.status() != WL_CONNECTED)
+    {
+        return;
+    }
+
+    String desiredHostname = buildMDNSHostname(idCode);
+
+    if (mdnsStarted && mdnsHostname == desiredHostname)
+    {
+        return;
+    }
+
+    if (mdnsStarted)
+    {
+        MDNS.end();
+        mdnsStarted = false;
+    }
+
+    if (!MDNS.begin(desiredHostname.c_str()))
+    {
+        SysLogs::logWarning("[mDNS] Failed to start mDNS responder");
+        return;
+    }
+
+    MDNS.addService("http", "tcp", 80);
+    mdnsStarted = true;
+    mdnsHostname = desiredHostname;
+
+    SysLogs::logInfo("NETWORK", "[mDNS] Hostname registered: " + mdnsHostname + ".local");
 }
 
 bool NetworkConnections::hasNVSSettingChanged(const char *file, String keyName, uint32_t &newValue)
@@ -478,11 +569,12 @@ void NetworkConnections::saveNetworkConfig(IPAddress ip, IPAddress gateway, IPAd
     bool currentSubnet = hasNVSSettingChanged("network", "subnet", subnetValue);
     bool currentDNS1 = hasNVSSettingChanged("network", "dns1", dns1Value);
     bool currentDNS2 = hasNVSSettingChanged("network", "dns2", dns2Value);
+    bool staticEnabled = hasBoolNVSSettingChanged("network", "staticEnabled", true);
     bool hasConfig = hasBoolNVSSettingChanged("network", "hasConfig", true);
 
     hasStoredNetworkConfig = true;
 
-    if (currentIP || currentGateway || currentSubnet || currentDNS1 || currentDNS2 || hasConfig)
+    if (currentIP || currentGateway || currentSubnet || currentDNS1 || currentDNS2 || staticEnabled || hasConfig)
     {
         SysLogs::logInfo("NETWORK", "Saved updated network config - IP: " + ip.toString() + ", Gateway: " + gateway.toString());
     }
@@ -497,9 +589,18 @@ bool NetworkConnections::loadNetworkConfig(IPAddress &ip, IPAddress &gateway, IP
     preferences.begin("network", true); // Read-only mode
 
     bool hasConfig = preferences.getBool("hasConfig", false);
+    bool staticEnabled = preferences.getBool("staticEnabled", false);
+
     if (!hasConfig)
     {
         preferences.end();
+        return false;
+    }
+
+    if (!staticEnabled)
+    {
+        preferences.end();
+        SysLogs::logInfo("NETWORK", "[NETWORK] Stored static config is disabled, using DHCP");
         return false;
     }
 
@@ -1021,6 +1122,14 @@ void NetworkConnections::printNetworkInfo()
 
     SysLogs::print("Signal Strength (RSSI): ");
     SysLogs::println(String(WiFi.RSSI()) + " dBm");
+
+    if (mdnsStarted)
+    {
+        SysLogs::print("mDNS URL: http://");
+        SysLogs::print(mdnsHostname);
+        SysLogs::println(".local");
+    }
+
     SysLogs::logInfo("NETWORK", "----------------------------------------");
 }
 
@@ -1774,11 +1883,11 @@ bool NetworkConnections::testServerConnection(const String &device_id)
     }
 }
 
-bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String &deviceID)
+bool NetworkConnections::publishSensorData(const String &jsonPayload)
 {
     if (WiFi.status() != WL_CONNECTED)
     {
-        SysLogs::logInfo("NETWORK", "[HTTP] Cannot send data - not connected to WiFi");
+        SysLogs::logInfo("NETWORK", "[HTTP] Cannot publish data - not connected to WiFi");
         return false;
     }
 
@@ -1787,109 +1896,28 @@ bool NetworkConnections::sendSensorDataHTTP(const sensorData &data, const String
 
     String url = "http://" + String(server.address) + ":" + String(server.port) + server.apiPostRoute;
 
-    SysLogs::logInfo("HTTP", "Sending sensor data to: " + url);
+    SysLogs::logInfo("HTTP", "Publishing sensor payload to: " + url);
+    SysLogs::logDebug("HTTP", "Payload: " + jsonPayload);
 
-    // Create JSON payload using ArduinoJson v7 syntax
-    JsonDocument doc;
-    doc["deviceId"] = deviceID;
-    doc["sensorId"] = data.sensorID;
-    doc["sensorType"] = data.sensorType[0]; // Use first sensor type
-    doc["status"] = data.status;
-    doc["unit"] = data.unit[0]; // Use first unit
-    doc["timestamp"] = data.timestamp;
-
-    // Add sensor values array using v7 syntax
-    JsonArray values = doc["values"].to<JsonArray>();
-    for (float value : data.values)
-    {
-        values.add(value);
-    }
-
-    String jsonString;
-    serializeJson(doc, jsonString);
-
-    SysLogs::logDebug("HTTP", "JSON payload: " + jsonString);
-
-    // Configure HTTP request
     http.begin(url);
     http.addHeader("Content-Type", "application/json");
     http.addHeader("User-Agent", "ESP32-GardenGuardian/1.0");
-    http.setTimeout(15000); // 15 second timeout
+    http.setTimeout(15000);
 
-    // Send POST request
-    int httpResponseCode = http.POST(jsonString);
+    int httpResponseCode = http.POST(jsonPayload);
 
     if (httpResponseCode > 0)
     {
         String response = http.getString();
-        SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode) + "");
+        SysLogs::logInfo("NETWORK", "[HTTP] Response code: " + String(httpResponseCode));
         SysLogs::logDebug("HTTP", "Response: " + response);
-
         http.end();
-        return httpResponseCode >= 200 && httpResponseCode < 300; // Accept 2xx responses
+        return httpResponseCode >= 200 && httpResponseCode < 300;
     }
     else
     {
-        SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode) + "");
+        SysLogs::logInfo("NETWORK", "[HTTP] Request failed with error: " + String(httpResponseCode));
         http.end();
         return false;
     }
-}
-
-bool NetworkConnections::publishSensorData(const SensorDataManager &dataManager, const String &deviceID)
-{
-    if (WiFi.status() != WL_CONNECTED)
-    {
-        SysLogs::logInfo("NETWORK", "[HTTP] Cannot publish data - not connected to WiFi");
-        return false;
-    }
-
-    SysLogs::logInfo("NETWORK", "[HTTP] Starting sensor data publication...");
-
-    // Test server connection first
-    if (!testServerConnection(deviceID))
-    {
-        SysLogs::logInfo("NETWORK", "[HTTP] Server connection test failed - aborting publication");
-        return false;
-    }
-    // Get all sensor data
-    std::vector<struct sensorData> allData = dataManager.getAllSensorData();
-
-    if (allData.empty())
-    {
-        SysLogs::logInfo("NETWORK", "[HTTP] No sensor data to publish");
-        return true; // Not an error, just nothing to send
-    }
-
-    SysLogs::logInfo("HTTP", "Publishing " + String(allData.size()) + " sensor data items...");
-
-    int successCount = 0;
-    int totalCount = allData.size();
-
-    // Send each sensor data item separately
-    for (const auto &data : allData)
-    {
-        SysLogs::logDebug("HTTP", "Sending data for sensor: " + data.sensorID);
-
-        if (sendSensorDataHTTP(data, deviceID))
-        {
-            successCount++;
-            SysLogs::logSuccess("HTTP", "Successfully sent data for sensor: " + data.sensorID);
-        }
-        else
-        {
-            SysLogs::logError("Failed to send data for sensor: " + data.sensorID);
-        }
-
-        // Small delay between requests to avoid overwhelming the server
-        delay(100);
-
-        // Feed watchdog to prevent reset during multiple HTTP requests
-        esp_task_wdt_reset();
-    }
-
-    SysLogs::logInfo("NETWORK", "[HTTP] Publication complete: " + String(successCount) + "/" + String(totalCount) + " successful");
-
-    // Return true if at least some data was sent successfully
-    return successCount > 0;
 }

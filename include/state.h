@@ -53,6 +53,14 @@ struct SystemState
   // Serial Mode tracking
   SystemMode previousMode = SystemMode::INITIALIZING; // Track mode before entering SERIAL_MODE
   unsigned long serialModeStartTime = 0; // Track when SERIAL_MODE was entered
+
+  // Payload envelope counters (NVS-persisted)
+  uint32_t batch_id = 0;
+  uint32_t wake_count = 0;
+
+  // Device location (configurable per deployment site)
+  float locationLat = DEFAULT_LAT;
+  float locationLon = DEFAULT_LON;
 };
 
 extern SystemState state;
