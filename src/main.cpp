@@ -19,6 +19,7 @@
 #include <Arduino.h>
 #include <time.h>
 #include "esp_sleep.h"
+#include <Preferences.h>
 
 // Include System Libraries
 #include "networkConnections.h"
@@ -35,8 +36,15 @@
 #include "state.h"
 #include "base/deviceConfig.h"
 #include "base/sysLogs.h"
+#include "base/serialConfig.h"
 
 #include "tempHumDeviceConfig.h"
+
+// Runtime DEBUG_MODE variable (replaces compile-time constant)
+bool DEBUG_MODE = true;
+
+// NVS namespace for payload counters
+static Preferences payloadPrefs;
 
 /**
  * @brief Global system state object
@@ -76,8 +84,21 @@ void initializeMQTT();
 bool readSensorData(bool discardReading = false);
 bool readDHTData(bool discardReading = false);
 
-bool publishDataWithMQTT();
-bool publishDataWithHTTP();
+bool publishDataWithHTTP(const String &jsonPayload);
+bool publishDataWithMQTT(const String &jsonPayload);
+
+/**
+ * @brief Load batch_id and wake_count from NVS, increment them, save back, and update state.
+ */
+void incrementAndPersistPayloadCounters()
+{
+  payloadPrefs.begin("payload", false);
+  state.batch_id   = payloadPrefs.getUInt("batch_id",   0) + 1;
+  state.wake_count = payloadPrefs.getUInt("wake_count",  0) + 1;
+  payloadPrefs.putUInt("batch_id",   state.batch_id);
+  payloadPrefs.putUInt("wake_count", state.wake_count);
+  payloadPrefs.end();
+}
 
 /**
  * @brief Load and apply device-specific settings from storage
@@ -205,11 +226,11 @@ bool readDHTData(bool discardReading)
     SysLogs::logError("Failed to read from DHT sensor!");
     state.sensorError = true;
     state.lastErrorTime = millis();
-    status = 500; // Update status to indicate error
+    status = 503; // Sensor fault status per company payload spec
 
     // Update latest readings with error status
-    latestReadings.temperatureStatus = 500;
-    latestReadings.humidityStatus = 500;
+    latestReadings.temperatureStatus = 503;
+    latestReadings.humidityStatus = 503;
   }
   else
   {
@@ -228,18 +249,16 @@ bool readDHTData(bool discardReading)
   {
 
     sensorDataManager.addSensorData({.sensorID = "DHT-" + state.idCode,
-                                     .sensorType = {"airTemperature"},
-                                     .sensorName = "DHT",
+                                     .sensorType = "Air Temperature",
                                      .status = status,
-                                     .unit = {"°C"},
+                                     .unit = "C",
                                      .timestamp = state.currentTime,
                                      .values = {temp}});
 
     sensorDataManager.addSensorData({.sensorID = "DHT-" + state.idCode,
-                                     .sensorType = {"airHumidity"},
-                                     .sensorName = "DHT",
+                                     .sensorType = "Air Humidity",
                                      .status = status,
-                                     .unit = {"%"},
+                                     .unit = "%",
                                      .timestamp = state.currentTime,
                                      .values = {hum}});
   }
@@ -255,78 +274,50 @@ bool readDHTData(bool discardReading)
 /**
  * @brief Publish sensor data via MQTT to AWS IoT Core
  * @return true if all data published successfully, false if any publish failed
- *
- * Iterates through all collected sensor data and publishes each item to AWS IoT Core
- * via MQTT. Converts data to JSON format before transmission. Includes delays between
- * publishes to prevent overwhelming the broker.
+/**
+ * @brief Publish the pre-built payload via MQTT to AWS IoT Core.
+ * @param jsonPayload Full company-spec JSON envelope string
+ * @return true if published successfully
  */
-bool publishDataWithMQTT()
+bool publishDataWithMQTT(const String &jsonPayload)
 {
-  SysLogs::logInfo("MQTT", "Publishing sensor data via MQTT...");
-  SysLogs::logInfo("MQTT", String(sensorDataManager.getSensorDataCount()) + " sensor data items...");
+  SysLogs::logInfo("MQTT", "Publishing sensor payload via MQTT...");
 
-  // Combine device_id with idCode for the full device identifier
-  String fullDeviceID = state.deviceID + state.idCode;
-
-  const std::vector<sensorData> &dataList = sensorDataManager.getAllSensorData();
-  bool allPublished = true;
-
-  for (const auto &data : dataList)
+  if (!mqtt.isConnected())
   {
-
-    // Print the sensor being published
-    SysLogs::logDebug("MQTT", "Publishing sensor data for: " + data.sensorID);
-
-    // Convert sensor data to JSON format
-    String jsonPayload = sensorDataManager.convertSensorDataToJSON(data, fullDeviceID);
-
-    // Publish to MQTT
-    if (mqtt.isConnected())
-    {
-      // Publish the JSON data to the MQTT Broker
-      if (!mqtt.publishMessage(jsonPayload))
-      {
-        SysLogs::logError("Failed to publish to MQTT: " + data.sensorID);
-        allPublished = false;
-      }
-    }
-    else
-    {
-      SysLogs::logWarning("MQTT not connected, skipping publish for: " + data.sensorID);
-      allPublished = false;
-    }
-
-    // Delay for 1 second between each publish
-    delay(1000);
+    SysLogs::logWarning("MQTT not connected, skipping publish");
+    return false;
   }
-  return allPublished;
+
+  if (!mqtt.publishMessage(jsonPayload))
+  {
+    SysLogs::logError("Failed to publish payload via MQTT");
+    return false;
+  }
+
+  SysLogs::logSuccess("MQTT", "Payload published successfully");
+  return true;
 }
 
 /**
- * @brief Publish sensor data via HTTP POST request
- * @return true if data published successfully, false otherwise
- *
- * Publishes all collected sensor data via HTTP to a remote server.
- * Clears the sensor data buffer on successful transmission.
+ * @brief Publish the pre-built payload via HTTP POST to the server endpoint.
+ * @param jsonPayload Full company-spec JSON envelope string
+ * @return true if published successfully
  */
-bool publishDataWithHTTP()
+bool publishDataWithHTTP(const String &jsonPayload)
 {
   SysLogs::printSectionHeader("HTTP");
-  SysLogs::logInfo("HTTP", "Publishing " + String(sensorDataManager.getSensorDataCount()) + " sensor data items...");
+  SysLogs::logInfo("HTTP", "Publishing sensor payload via HTTP...");
 
-  // Combine device_id with idCode for the full device identifier
-  String fullDeviceID = state.deviceID + state.idCode;
-
-  // Publish sensor data via HTTP
-  bool publishSuccess = network.publishSensorData(sensorDataManager, fullDeviceID);
+  bool publishSuccess = network.publishSensorData(jsonPayload);
 
   if (publishSuccess)
   {
-    SysLogs::logSuccess("HTTP", "Data published successfully - clearing sensor data buffer");
+    SysLogs::logSuccess("HTTP", "Payload published successfully");
   }
   else
   {
-    SysLogs::logError("Failed to publish data - keeping data for next attempt");
+    SysLogs::logError("Failed to publish payload via HTTP");
   }
 
   return publishSuccess;
@@ -410,6 +401,13 @@ void setup()
   // Load and apply device settings BEFORE network initialization
   loadDeviceSettings();
 
+  // Load persisted payload counters
+  payloadPrefs.begin("payload", true);
+  state.batch_id   = payloadPrefs.getUInt("batch_id",   0);
+  state.wake_count = payloadPrefs.getUInt("wake_count",  0);
+  payloadPrefs.end();
+  SysLogs::logInfo("SYSTEM", "Payload counters loaded — batch_id=" + String(state.batch_id) + " wake_count=" + String(state.wake_count));
+
   // Initialize Network
   SysLogs::logInfo("SYSTEM", "Initializing network connections...");
   setupNetwork();
@@ -429,7 +427,7 @@ void setup()
  * - NORMAL_OPERATION: Regular sensor reading, data publishing, and sleep cycles
  * - CONFIG_MODE: Access point mode for WiFi configuration
  * - WAKE_UP: Recovery and reconnection after sleep
- * - SERIAL_MODE: Serial configuration interface (future implementation)
+ * - SERIAL_MODE: Serial configuration interface
  * - ERROR: Error handling state
  *
  * Runs continuously after setup() completes.
@@ -437,6 +435,14 @@ void setup()
 void loop()
 {
   unsigned long currentMillis = millis();
+
+  // Check for serial access password in any mode except SERIAL_MODE
+  // Note: checkForSerialAccess() is non-blocking and only processes available serial data
+  if (state.currentMode != SystemMode::SERIAL_MODE && SerialCLI::checkForSerialAccess())
+  {
+    state.previousMode = state.currentMode;
+    state.currentMode = SystemMode::SERIAL_MODE;
+  }
 
   switch (state.currentMode)
   {
@@ -503,41 +509,64 @@ void loop()
       }
     }
 
-    // Check if it's time to publish data via HTTP (non-blocking timer)
+    // Check if it's time to publish data (non-blocking timer)
     if (state.httpPublishEnabled && network.isConnected() &&
         (currentMillis - state.lastHTTPPublishTime >= state.httpPublishInterval))
     {
       SysLogs::logInfo("SYSTEM", "Time to publish sensor data at t=" + String(currentMillis));
       state.lastHTTPPublishTime = currentMillis;
 
-      // Only publish if we have data and device is stabilized
-      // if (state.deviceStabilized && sensorData.getSensorDataCount() > 0)
       if (sensorDataManager.getSensorDataCount() > 0)
       {
+        // Increment and persist payload counters before building the envelope
+        incrementAndPersistPayloadCounters();
 
-        // First handle HTTP Publishing
-        // publishDataWithHTTP();
+        String fullDeviceID = state.deviceID + state.idCode;
+        unsigned long uptimeSeconds = millis() / 1000;
 
-        // handle Publishing via MQTT as well
-        publishDataWithMQTT();
+        String payload = sensorDataManager.buildFullPayload(
+            fullDeviceID,
+            state.batch_id,
+            state.wake_count,
+            state.currentTime,
+            uptimeSeconds,
+            state.locationLat,
+            state.locationLon,
+            FIRMWARE_VERSION);
+
+        SysLogs::logDebug("SYSTEM", "Built payload: " + payload);
+
+        // HTTP first, then MQTT — each gated by its transport flag
+        if (USE_HTTP)
+        {
+          publishDataWithHTTP(payload);
+        }
+
+        if (USE_MQTT)
+        {
+          publishDataWithMQTT(payload);
+        }
 
         // Clear sensor data after publishing
         sensorDataManager.resetSensorData();
       }
       else
       {
-        SysLogs::logInfo("HTTP", "No data to publish or device not stabilized yet");
+        SysLogs::logInfo("SYSTEM", "No data to publish yet");
       }
     }
 
     // Handle web server requests when connected to WiFi
-    // if (network.isConnected())
-    // {
-    //   network.handleClientRequestsWithSensorData(latestReadings);
-    // }
+    if (network.isConnected())
+    {
+      network.handleClientRequestsWithSensorData(latestReadings);
+    }
 
-    // Sleep testing
-    sleep(currentMillis);
+    // Sleep Mode - only if not connected via USB Serial
+    if (!Serial)
+    {
+      sleep(currentMillis);
+    }
 
     break;
   }
@@ -617,11 +646,13 @@ void loop()
 
   case SystemMode::SERIAL_MODE:
   {
-    // Future implementation for Serial Mode
-    // This mode is for user override for config via Serial. It will disable any existing debug statements.
-    // This mode will remain until a user exits.
-    // A menu will be presented to the user for configuration options.
-    // For now, just break
+    SysLogs::logInfo("SYSTEM", "Entering Serial Configuration Mode");
+
+    // Serial configuration mode for user interaction
+    // This mode disables debug logging and presents an interactive menu
+    // for device configuration, diagnostics, and system management
+    SerialCLI::enterSerialMode(state, network, dhtSensor, latestReadings);
+    // Mode will be restored to previous state by enterSerialMode()
     break;
   }
   }

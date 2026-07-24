@@ -8,8 +8,8 @@ struct LatestReadings
     float humidity = NAN;
     unsigned long temperatureTimestamp = 0;
     unsigned long humidityTimestamp = 0;
-    int temperatureStatus = 500;  // Default to error
-    int humidityStatus = 500;     // Default to error
+    int temperatureStatus = 503;  // Default to error
+    int humidityStatus = 503;     // Default to error
     bool hasValidData = false;
 };
 

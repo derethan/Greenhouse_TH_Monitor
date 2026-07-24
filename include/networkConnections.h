@@ -52,6 +52,9 @@ private:
     String apSSID;
     Preferences preferences;
     bool webServerStarted = false; // Track if web server is running
+    bool mdnsStarted = false;
+    String mdnsHostname = "";
+    String mdnsIdCode = "";
 
     // Network state tracking
     String lastConnectedSSID = "";
@@ -60,9 +63,10 @@ private:
     unsigned long lastReconnectAttempt = 0;
     const unsigned long RECONNECT_COOLDOWN = 30000; // 30 seconds between retry attempts
 
-    void saveDeviceSettings(const DeviceSettings &settings);
     void scanNetworks();
     void printNetworkInfo();
+    void startMDNS(const String &idCode);
+    String buildMDNSHostname(const String &idCode);
 
     void sendHTTPHeader(WiFiClient &client, int statusCode = 200);
     void sendHTMLHeader(WiFiClient &client, const char *title);
@@ -88,6 +92,7 @@ private:
 public:
     WiFiCredentials loadWiFiCredentials(); // New function
     DeviceSettings loadDeviceSettings();   // New function for loading device settings
+    void saveDeviceSettings(const DeviceSettings &settings); // Save device settings to NVS
 
     // WiFi and network methods
     void setupWiFi(WiFiCredentials credentials, String idCode, bool apON); // Modified to accept credentials
@@ -115,8 +120,7 @@ public:
     static bool retryNTPSync();        // New function for periodic NTP retry attempts
 
     // HTTP Publishing functions
-    bool publishSensorData(const SensorDataManager &sensorData, const String &deviceID);
-    bool sendSensorDataHTTP(const sensorData &data, const String &deviceID);
+    bool publishSensorData(const String &jsonPayload);
     bool testServerConnection(const String &deviceID);
 
     bool isConnected();
