@@ -161,7 +161,13 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
         WiFi.config(noIP, noIP, noIP, noIP, noIP);
     }
 
-    WiFi.begin(ssid.c_str(), password.c_str());
+    String connectPassword = password;
+    if (connectPassword == "__OPEN__")
+    {
+        connectPassword = "";
+    }
+
+    WiFi.begin(ssid.c_str(), connectPassword.c_str());
 
     // Wait for connection or timeout
     while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < TIMEOUT)
@@ -187,6 +193,7 @@ bool NetworkConnections::connectToNetwork(String ssid, String password)
         SysLogs::println(ssid);
         startMDNS(mdnsIdCode);
         printNetworkInfo();
+        startWebServer();
 
         // Store successful connection details
         lastConnectedSSID = ssid;
@@ -427,6 +434,9 @@ void NetworkConnections::disconnectWiFi()
         mdnsStarted = false;
         SysLogs::logInfo("NETWORK", "[mDNS] Service stopped");
     }
+
+    // Force web server restart after next WiFi connection.
+    webServerStarted = false;
 
     WiFi.disconnect(true); // true = turn off WiFi radio
     WiFi.mode(WIFI_OFF);

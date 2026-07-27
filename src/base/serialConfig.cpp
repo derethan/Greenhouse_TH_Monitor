@@ -459,6 +459,7 @@ namespace SerialCLI
         Serial.println("2. View Stored WiFi Credentials");
         Serial.println("3. View Network Configuration (IP, Gateway, DNS)");
         Serial.println("4. Configure Network Settings (IP, Gateway, DNS)");
+        Serial.println("5. Modify Current WiFi Network");
         Serial.println("0. Back to Main Menu");
         Serial.println();
         Serial.print("Select option: ");
@@ -653,6 +654,129 @@ namespace SerialCLI
             {
                 Serial.println("Configuration not saved.");
             }
+            break;
+        }
+
+        case 5:
+        {
+            Serial.println("Modify Current WiFi Network");
+            Serial.println("Scanning for networks...");
+
+            int n = WiFi.scanNetworks();
+            if (n <= 0)
+            {
+                Serial.println("No WiFi networks found. Please try again.");
+                break;
+            }
+
+            const int maxOptions = 26;
+            int optionCount = (n > maxOptions) ? maxOptions : n;
+
+            Serial.print("Found ");
+            Serial.print(n);
+            Serial.println(" network(s).");
+            if (n > maxOptions)
+            {
+                Serial.print("Showing first ");
+                Serial.print(maxOptions);
+                Serial.println(" networks (A-Z).");
+            }
+            Serial.println();
+
+            for (int i = 0; i < optionCount; i++)
+            {
+                char option = 'A' + i;
+                Serial.print(option);
+                Serial.print(". ");
+                Serial.print(WiFi.SSID(i));
+                Serial.print(" (");
+                Serial.print(WiFi.RSSI(i));
+                Serial.print(" dBm) ");
+                Serial.println((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? "[Open]" : "[Secured]");
+            }
+
+            Serial.println();
+            Serial.print("Select network (A-");
+            Serial.print((char)('A' + optionCount - 1));
+            Serial.print(") or type 0 to cancel: ");
+
+            String selection = readSerialInput();
+            selection.trim();
+
+            if (selection == "0" || selection.length() == 0)
+            {
+                Serial.println("Network change cancelled.");
+                break;
+            }
+
+            selection.toUpperCase();
+            char selectedOption = selection.charAt(0);
+            int selectedIndex = selectedOption - 'A';
+
+            if (selectedIndex < 0 || selectedIndex >= optionCount)
+            {
+                Serial.println("Invalid selection.");
+                break;
+            }
+
+            String selectedSSID = WiFi.SSID(selectedIndex);
+            bool isOpenNetwork = (WiFi.encryptionType(selectedIndex) == WIFI_AUTH_OPEN);
+
+            Serial.println();
+            Serial.print("Selected SSID: ");
+            Serial.println(selectedSSID);
+
+            String newPassword = "";
+            if (!isOpenNetwork)
+            {
+                Serial.print("Enter WiFi password: ");
+                newPassword = readSerialInput();
+                newPassword.trim();
+
+                if (newPassword.length() == 0)
+                {
+                    Serial.println("Password cannot be empty for secured networks.");
+                    break;
+                }
+            }
+            else
+            {
+                Serial.println("Open network selected. No password required.");
+                newPassword = "__OPEN__";
+            }
+
+            Serial.print("Save and switch to this network? (y/n): ");
+            String confirm = readSerialInput();
+            confirm.toLowerCase();
+
+            if (confirm == "y" || confirm == "yes")
+            {
+                network.saveWiFiCredentials(selectedSSID, newPassword);
+                Serial.println("WiFi credentials updated successfully.");
+
+                Serial.println("Attempting immediate network switch...");
+                network.disconnectWiFi();
+                WiFi.mode(WIFI_STA);
+                delay(100);
+
+                bool connected = network.connectToNetwork(selectedSSID, newPassword);
+                if (connected)
+                {
+                    Serial.println("Successfully switched to the new WiFi network.");
+                    Serial.print("New IP Address: ");
+                    Serial.println(WiFi.localIP());
+                }
+                else
+                {
+                    Serial.println("Failed to connect to the selected network right now.");
+                    Serial.println("Saved credentials will be retried on next reconnect/restart.");
+                }
+            }
+            else
+            {
+                Serial.println("Network change cancelled.");
+            }
+
             break;
         }
 
